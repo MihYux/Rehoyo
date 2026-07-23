@@ -98,9 +98,21 @@ npm run check      # 单元测试与生产构建
 
 ReHoYo 支持两种连接方式，配置优先级为 **应用内连接管理 > 外部文件 / 环境变量**。两种方式都不允许把 API Key 写入项目文件、Git、`localStorage` 或日志；模型端点固定为 `https://open.bigmodel.cn/api/coding/paas/v4`，渲染器不能覆盖。
 
-#### 方式一：外部文件 / 环境变量（当前可用，适合首次配置与 CI）
+#### 方式一：应用内连接管理（推荐）
 
-将密钥写到一个独立的纯文本文件（路径自选，务必放在 Git 仓库之外），再通过环境变量或被 Git 忽略的 `.rehoyo-live.json` 告知应用密钥文件的位置。密钥文件只在 Electron 主进程发起请求时读取。
+应用首次启动时显示全屏连接页 [`src/features/connection/ConnectionGate.tsx`](./src/features/connection/ConnectionGate.tsx)，用户粘贴 GLM API Key 与 Endpoint 后，主进程使用 Electron `safeStorage` 在操作系统级别加密并保存到：
+
+```text
+<Electron userData>/rehoyo-connection.json
+```
+
+加密后端由操作系统提供（macOS Keychain / Windows DPAPI / Linux libsecret），文件只保存密文。渲染进程通过 [`src/desktop/bridge.ts`](./src/desktop/bridge.ts) 仅能查询连接状态、提交新凭据或清除本机配置，不能读取已保存的密钥。`safeStorage` 不可用时（例如未解锁的 Linux keyring），密钥仅保存在主进程内存中，重启后需要重新输入，**绝不降级为明文持久化**。
+
+任务大厅提供「连接设置」入口，可修改或清除本机配置，且不会删除任务历史。设计与实施背景见 [`docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md`](./docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md) 与 [`docs/superpowers/plans/2026-07-23-secure-first-run-connection.md`](./docs/superpowers/plans/2026-07-23-secure-first-run-connection.md)。
+
+#### 方式二：外部文件 / 环境变量（适合开发与 CI）
+
+将密钥写到一个独立的纯文本文件（路径自选，务必放在 Git 仓库之外），再通过环境变量或被 Git 忽略的 `.rehoyo-live.json` 告知应用密钥文件的位置。密钥文件只在 Electron 主进程发起请求时读取，不进入渲染器、`localStorage` 或日志。
 
 **macOS / Linux**：
 
@@ -142,18 +154,6 @@ npm run dev
 ```
 
 或使用启动参数显式指定配置文件：`electron . --rehoyo-glm-config=.rehoyo-live.json`。
-
-#### 方式二：应用内连接管理（推荐，规划中）
-
-应用首次启动时显示一个全屏连接页，用户粘贴 GLM API Key 与 Endpoint 后，主进程使用 Electron `safeStorage` 在操作系统级别加密并保存到：
-
-```text
-<Electron userData>/rehoyo-connection.json
-```
-
-加密后端由操作系统提供（macOS Keychain / Windows DPAPI / Linux libsecret），文件只保存密文。渲染进程只能查询连接状态、提交新凭据或清除本机配置，不能读取已保存的密钥。`safeStorage` 不可用时（例如未解锁的 Linux keyring），密钥仅保存在主进程内存中，重启后需要重新输入，**绝不降级为明文持久化**。任务大厅的「连接设置」入口支持修改或清除本机配置，且不会删除任务历史。
-
-> **当前状态**：连接管理器 [`electron/connection-manager.mjs`](./electron/connection-manager.mjs)、主进程 IPC、预加载桥接 [`src/desktop/bridge.ts`](./src/desktop/bridge.ts) 与单元测试已合并，主进程层已就位；**连接页 React UI 与端到端测试仍在跟进**，因此用户暂不能从应用界面输入密钥。UI 接入完成前请使用方式一完成首次配置。设计与实施计划见 [`docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md`](./docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md) 与 [`docs/superpowers/plans/2026-07-23-secure-first-run-connection.md`](./docs/superpowers/plans/2026-07-23-secure-first-run-connection.md)。
 
 #### 端点与模型约束
 
