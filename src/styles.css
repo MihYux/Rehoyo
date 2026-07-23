@@ -394,6 +394,510 @@ a { color: inherit; text-decoration: none; }
 @keyframes slow-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 @keyframes live-pulse { 0%, 100% { opacity: 0.55; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
 
+/* Light flat presentation layer
+   The Electron renderer is intentionally scaled as one surface so typography,
+   controls, spacing, and data visualizations remain proportional. */
+:root {
+  color: #1f2937;
+  background: #f4f7fa;
+  --void-950: #f4f7fa;
+  --void-900: #ffffff;
+  --rail-900: #ffffff;
+  --rail-800: #e6edf3;
+  --nebula-500: #64748b;
+  --signal-400: #137f9a;
+  --signal-300: #0f6f87;
+  --starlight-50: #182230;
+  --paper-50: #f6f8fa;
+  --ink-950: #182230;
+  --antique-400: #946b22;
+  --risk-500: #c34f62;
+  --success-400: #258365;
+  --line: #d9e2ea;
+  --muted: #667085;
+  --ui-scale: 1.5;
+  --scaled-viewport-height: 66.6667dvh;
+}
+
+html,
+body {
+  color: #1f2937;
+  background: #f4f7fa;
+}
+
+body { overflow-x: hidden; }
+
+#root {
+  width: 100%;
+  min-height: var(--scaled-viewport-height);
+  zoom: var(--ui-scale);
+}
+
+*,
+*::before,
+*::after {
+  background-image: none !important;
+  mask-image: none !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+::selection { color: #ffffff; background: var(--signal-400); }
+:focus-visible { outline-color: #0b718b; }
+
+.route-loading,
+.desktop-warning,
+.lobby-page,
+.workspace-page,
+.report-page,
+.advisor-page {
+  min-height: var(--scaled-viewport-height);
+  color: #1f2937;
+  background: #f4f7fa;
+}
+
+.lobby-page::before,
+.cosmic-grid,
+.workspace-grid-bg,
+.agent-orbit::before {
+  display: none;
+}
+
+.lobby-intro,
+.agent-orbit-panel {
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.global-header,
+.workspace-header,
+.report-header,
+.advisor-header {
+  color: #1f2937;
+  border-color: #d9e2ea;
+  background: #ffffff;
+  backdrop-filter: none;
+}
+
+.brand-mark__plate {
+  border: 1px solid #d9e2ea;
+  background: #ffffff;
+}
+
+.brand-mark__descriptor span,
+.workspace-breadcrumb strong,
+.report-mission strong,
+.advisor-header__title strong,
+.advisor-report-context strong {
+  color: #273548;
+}
+
+.brand-mark__descriptor small,
+.global-nav button,
+.demo-label,
+.workspace-breadcrumb span,
+.workspace-clock span,
+.report-mission span,
+.advisor-report-context span {
+  color: #667085;
+}
+
+.global-nav button:hover,
+.global-nav button.is-active {
+  color: #137f9a;
+}
+
+.global-nav button.is-active::after {
+  background: #137f9a;
+}
+
+.live-indicator i,
+.team-status i,
+.workspace-live i,
+.stream-summary span i,
+.timeline-console__head > div:last-child i,
+.core-radar i {
+  background: #137f9a;
+}
+
+/* Lobby */
+.lobby-main {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 30px;
+  min-height: calc(var(--scaled-viewport-height) - 135px);
+  padding: 34px 34px 28px;
+}
+
+.lobby-intro h1,
+.panel-heading h2,
+.orbit-panel__header strong {
+  color: #172033;
+}
+
+.lobby-intro h1 em { color: #137f9a; }
+.lobby-lede { color: #586579; }
+.mission-meta div,
+.section-kicker,
+.recent-title,
+.recent-section > p { color: #667085; }
+
+.task-config-panel,
+.agent-orbit-panel,
+.recent-list button {
+  border-color: #d7e0e8;
+  background: #ffffff;
+}
+
+.research-mode-selector > button,
+.game-selector button,
+.coverage-strip span,
+.source-tags i {
+  color: #59677a;
+  border-color: #d7e0e8;
+  background: #f7f9fb;
+}
+
+.research-mode-selector strong,
+.game-selector button span:nth-child(2),
+.recent-list strong {
+  color: #344054;
+}
+
+.research-mode-selector small,
+.game-selector button small,
+.game-selector legend,
+.panel-index,
+.orbit-panel__header span,
+.orbit-panel__footer span {
+  color: #778396;
+}
+
+.research-mode-selector > button:hover,
+.research-mode-selector > button.is-active,
+.game-selector button:hover,
+.game-selector button.is-selected,
+.recent-list button:hover {
+  color: #105f74;
+  border-color: #75b5c5;
+  background: #eaf5f8;
+}
+
+.research-mode-selector > button.is-active strong,
+.game-selector button.is-selected,
+.game-selector button.is-selected span:nth-child(2) {
+  color: #105f74;
+}
+
+.version-readout {
+  color: #344054;
+  background: #faf7ef;
+}
+
+.version-readout span,
+.version-readout small { color: #6b7280; }
+.version-readout strong { color: #59461f; }
+
+.custom-fields label { color: #59677a; }
+.custom-fields input {
+  color: #1f2937;
+  border-color: #cfd9e2;
+  background: #ffffff;
+}
+
+.primary-launch {
+  clip-path: none;
+  color: #ffffff;
+  background: #137f9a;
+}
+
+.primary-launch:hover { background: #0f6f87; }
+
+.agent-orbit-panel { background: #f8fafb; }
+.orbit-ring { border-color: #c7dbe2; }
+.orbit-ring--inner { border-color: #dfd4bb; }
+.orbit-route { border-top-color: #8ebdca; border-right-color: #d9e8ec; }
+.orbit-core {
+  color: #1f2937;
+  border-color: #8fbfcb;
+  background: #eaf5f8;
+}
+.orbit-core strong { color: #244054; }
+.orbit-agent {
+  color: #1f2937;
+  border-color: #d3dde5;
+  background: #ffffff;
+  backdrop-filter: none;
+}
+.orbit-agent::after { background: #9fc6d0; }
+.orbit-agent strong { color: #344054; }
+.orbit-agent span,
+.orbit-agent > i,
+.orbit-panel__footer strong { color: #667085; }
+.orbit-agent__icon { color: #137f9a; border-color: #b9d7df; background: #eef7f9; }
+
+/* Lobby text uses darker flat colors so even the smallest operational labels
+   remain WCAG AA against white and pale-blue surfaces. */
+.section-kicker,
+.section-kicker > span,
+.lobby-intro h1 em,
+.team-status,
+.game-code {
+  color: #0b5f73 !important;
+}
+
+.lobby-lede,
+.mission-meta div,
+.mission-meta div span,
+.panel-index,
+.game-selector legend,
+.game-selector button span:nth-child(2),
+.game-selector button small,
+.coverage-strip span,
+.orbit-panel__header span,
+.orbit-panel__footer span,
+.orbit-panel__footer strong,
+.orbit-core span,
+.orbit-core small {
+  color: #475467 !important;
+}
+
+.panel-heading h2,
+.orbit-panel__header strong {
+  color: #182230 !important;
+}
+
+.snapshot-badge,
+.version-readout strong {
+  color: #69480d !important;
+}
+
+.version-readout span,
+.version-readout small {
+  color: #525f70 !important;
+}
+
+.research-mode-selector > button.is-active strong,
+.research-mode-selector > button.is-active small,
+.game-selector button.is-selected,
+.game-selector button.is-selected .game-code,
+.game-selector button.is-selected span:nth-child(2),
+.game-selector button.is-selected small {
+  color: #0b5366 !important;
+}
+
+.primary-launch,
+.primary-launch > span {
+  color: #ffffff !important;
+}
+
+/* Agent workspace */
+.workspace-page {
+  grid-template-rows: 66px minmax(340px, calc(var(--scaled-viewport-height) - 254px)) 188px;
+}
+
+.workspace-command,
+.workspace-intelligence-rail,
+.timeline-console,
+.timeline-console__head {
+  color: #1f2937;
+  border-color: #d9e2ea;
+  background: #ffffff;
+}
+
+.workspace-main { grid-template-columns: minmax(0, 1fr) 360px; }
+.workspace-command { padding-inline: 22px; }
+.workspace-title-row h1,
+.rail-heading h2,
+.inspector-identity strong { color: #263548; }
+.workspace-coverage,
+.workspace-clock strong,
+.stage-footer span,
+.stage-footer strong,
+.rail-heading span,
+.stream-summary small,
+.inspector-section > span,
+.inspector-identity small,
+.timeline-console__head span { color: #667085; }
+
+.agent-stage__axis { background: #cadde3; }
+.agent-stage::before,
+.agent-stage::after { border-color: #d5e2e7; }
+.agent-stage__core {
+  color: #1f2937;
+  border-color: #82b8c5;
+  background: #eaf5f8;
+}
+.agent-stage__core > span,
+.agent-stage__core > small { color: #667085; }
+.agent-stage__core > strong { color: #137f9a; }
+.core-radar { border-color: #b7d3da; }
+.core-radar::after { background: #137f9a; }
+
+.agent-node,
+.evidence-list article,
+.advisor-evidence-list article {
+  color: #1f2937;
+  border-color: #d7e0e8;
+  background: #f8fafb;
+}
+.agent-node:hover,
+.agent-node.status-running,
+.agent-node.status-handoff { border-color: #75b5c5; }
+.agent-node.status-completed { border-color: #7bbca5; }
+.agent-node__copy strong,
+.evidence-list article p,
+.inspector-section > p,
+.timeline-entry > p { color: #344054; }
+.agent-node__copy small,
+.agent-node__copy em,
+.agent-node__metric,
+.evidence-list article header i,
+.evidence-list article header small,
+.inspector-findings small,
+.timeline-entry,
+.timeline-entry time,
+.timeline-entry > strong { color: #667085; }
+.agent-node__icon,
+.inspector-icon { color: #137f9a; border-color: #bdd7de; background: #eef7f9; }
+.agent-node__progress { background: #dbe5e9; }
+.agent-node__progress i { background: #137f9a; }
+.status-completed .agent-node__progress i { background: #258365; }
+.timeline-entry__rail > i { background: #ffffff; }
+.timeline-entry__rail > em { background: #cbdde3; }
+
+.report-ready-overlay,
+.timeline-backdrop {
+  background: rgb(71 85 105 / 0.26);
+  backdrop-filter: none;
+}
+.report-ready-overlay > div,
+.research-failed-overlay > div {
+  color: #137f9a;
+  border-color: #8fc2ce;
+  background: #ffffff;
+}
+.report-ready-overlay strong { color: #253448; }
+
+/* Insight report */
+.report-root {
+  min-height: calc(var(--scaled-viewport-height) - 66px);
+  grid-template-columns: 210px minmax(0, 1fr);
+}
+.report-sidebar {
+  top: 66px;
+  height: calc(var(--scaled-viewport-height) - 66px);
+  color: #1f2937;
+  border-right: 1px solid #d9e2ea;
+  background: #ffffff;
+}
+.report-sidebar__intro strong,
+.report-sidebar [role='tab'][data-state='active'],
+.advisor-entry strong { color: #273548; }
+.report-sidebar [role='tab'],
+.report-sidebar__meta span,
+.report-disclaimer,
+.advisor-entry small { color: #667085; }
+.report-sidebar [role='tab'] { border-color: #edf0f3; }
+.report-sidebar [role='tab'][data-state='active'] { background: #eef7f9; }
+.report-sidebar__meta strong { color: #344054; }
+.advisor-entry { color: #137f9a; border-color: #9fc8d2; background: #eef7f9; }
+.report-canvas { background: #f6f8fa; }
+.report-card,
+.region-cards article,
+.regional-matrix,
+.controversy-list > article,
+.evidence-grid article,
+.strategy-list article,
+.report-card--quote,
+.decision-brief {
+  color: #1f2937;
+  border: 1px solid #d9e2ea;
+  background: #ffffff;
+}
+.report-card--quote blockquote,
+.decision-brief h3,
+.decision-brief > div strong { color: #344054; }
+.report-card--quote footer,
+.decision-brief > p,
+.decision-brief > div span { color: #667085; }
+.matrix-row > i { background: #4b9db1; }
+.decision-brief button { color: #116f86; border-color: #9fc8d2; background: #eef7f9; }
+.timeline-review-button,
+.report-context-tags,
+.report-kpis span,
+.report-kpis small,
+.report-section-heading > small,
+.report-card > header small,
+.report-card--controversy > p {
+  color: #475467 !important;
+}
+.report-overline,
+.report-section-heading span,
+.report-sidebar [role='tab'][data-state='active'] span {
+  color: #0b5f73 !important;
+}
+.report-kpis .kpi-positive span,
+.report-kpis .kpi-positive small,
+.keyword-positive {
+  color: #246b58 !important;
+}
+.report-kpis .kpi-negative span,
+.report-kpis .kpi-negative small,
+.keyword-negative {
+  color: #993d50 !important;
+}
+.keyword-neutral { color: #705321 !important; }
+.report-timeline-overlay > aside {
+  color: #1f2937;
+  border-left: 1px solid #d9e2ea;
+  background: #ffffff;
+}
+.report-timeline-overlay article strong { color: #344054; }
+.report-timeline-overlay article span,
+.report-timeline-overlay time,
+.report-timeline-overlay aside > p { color: #667085; }
+
+/* Grounded advisor */
+.advisor-main {
+  grid-template-columns: 230px minmax(0, 1fr) 300px;
+  height: calc(var(--scaled-viewport-height) - 66px);
+}
+.advisor-sidebar,
+.advisor-evidence-rail {
+  color: #1f2937;
+  border-color: #d9e2ea;
+  background: #ffffff;
+}
+.advisor-identity h1,
+.advisor-evidence-rail > header div,
+.evidence-chain-summary p,
+.advisor-evidence-list blockquote { color: #344054; }
+.advisor-identity p,
+.suggested-questions i,
+.evidence-chain-summary span,
+.advisor-evidence-list header small,
+.advisor-evidence-list footer span,
+.advisor-evidence-empty { color: #667085; }
+.suggested-questions button {
+  color: #344054;
+  border-color: #d7e0e8;
+  background: #f8fafb;
+}
+.suggested-questions button:hover { color: #105f74; border-color: #75b5c5; background: #eaf5f8; }
+.advisor-rule { border-color: #dfd4bb; background: #faf7ef; }
+.advisor-chat { background: #f4f7fa; }
+.advisor-chat__head { background: #ffffff; }
+.user-question p { color: #ffffff; background: #137f9a; }
+.advisor-composer button { background: #137f9a; }
+
+@supports not (zoom: 1.5) {
+  #root {
+    width: 66.6667%;
+    transform: scale(1.5);
+    transform-origin: top left;
+  }
+}
+
 @media (max-width: 1279px) {
   .lobby-page, .app-desktop { display: none !important; }
   .desktop-warning { display: grid; }
