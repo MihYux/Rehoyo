@@ -8,8 +8,8 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom'
-import { createCustomPreset, getPresetById } from './data/presets'
 import { startTask } from './domain/engine'
+import { isCompletedGroundedTask } from './domain/grounding'
 import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
 import { TaskLobby } from './features/lobby/TaskLobby'
@@ -28,13 +28,6 @@ const AdvisorWorkspace = lazy(() =>
 interface ActiveSession {
   preset: AnalysisPreset
   task: RuntimeTask
-}
-
-function resolvePreset(task: RuntimeTask): AnalysisPreset {
-  if (task.presetSnapshot?.dataMode === 'live') return task.presetSnapshot
-  const known = getPresetById(task.presetId)
-  if (known) return known
-  return createCustomPreset(task.gameName, task.versionTitle.replace(/^CUSTOM\s*/, ''))
 }
 
 function GuardedRun({
@@ -63,9 +56,11 @@ function completedSessionFor(
   recentTasks: RuntimeTask[],
 ): ActiveSession | null {
   if (!taskId) return null
-  if (session?.task.id === taskId && session.task.status === 'completed') return session
-  const task = recentTasks.find((item) => item.id === taskId && item.status === 'completed')
-  return task ? { task, preset: resolvePreset(task) } : null
+  if (session?.task.id === taskId && isCompletedGroundedTask(session.task)) {
+    return { task: session.task, preset: session.task.presetSnapshot }
+  }
+  const task = recentTasks.find((item) => item.id === taskId)
+  return task && isCompletedGroundedTask(task) ? { task, preset: task.presetSnapshot } : null
 }
 
 function GuardedReport({
@@ -132,7 +127,8 @@ export function AppRoutes() {
   }
 
   const handleOpenReport = (task: RuntimeTask) => {
-    setSession({ task, preset: resolvePreset(task) })
+    if (!isCompletedGroundedTask(task)) return
+    setSession({ task, preset: task.presetSnapshot })
     navigate(`/tasks/${encodeURIComponent(task.id)}/report?tab=overview`)
   }
 

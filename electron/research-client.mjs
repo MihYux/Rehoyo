@@ -66,6 +66,28 @@ function cleanString(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength)
 }
 
+function assertVerifiedEvidence(evidence) {
+  if (!Array.isArray(evidence) || !evidence.length) {
+    throw new Error('真实研究至少需要一条可验证公开证据。')
+  }
+  const ids = new Set()
+  for (const item of evidence) {
+    let isHttps = false
+    try {
+      isHttps = new URL(item?.url).protocol === 'https:'
+    } catch {
+      isHttps = false
+    }
+    if (
+      !item?.id || ids.has(item.id) || item.synthetic !== false || !isHttps ||
+      !cleanString(item.excerptOriginal, 1_600) || !Number.isFinite(Date.parse(item.retrievedAt))
+    ) {
+      throw new Error('检索结果包含不可验证、重复或缺少原始摘录的记录；任务已停止。')
+    }
+    ids.add(item.id)
+  }
+}
+
 export function sanitizeResearchRequest(value) {
   const input = value && typeof value === 'object' ? value : {}
   const gameName = cleanString(input.gameName, 120)
@@ -457,7 +479,7 @@ function validSentiment(value) {
 }
 
 function validRisk(value) {
-  return ['low', 'medium', 'high', 'critical'].includes(value) ? value : 'medium'
+  return ['low', 'medium', 'high', 'critical'].includes(value) ? value : 'low'
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -541,20 +563,21 @@ function deriveKeywords(evidence) {
   }))
 }
 
-function sanitizeRegions(result, evidence) {
-  const candidates = Array.isArray(result.regions) ? result.regions : []
+function sanitizeRegions(evidence) {
   return ['CN', 'JP', 'WEST'].map((region) => {
-    const candidate = candidates.find((item) => item?.region === region) || {}
     const regionalEvidence = evidence.filter((item) => item.region === region)
     const topics = deriveKeywords(regionalEvidence)
+    const percentages = derivePercentages(regionalEvidence)
     return {
       region,
-      label: cleanString(candidate.label, 30) || ({ CN: '中国', JP: '日本', WEST: '欧美' })[region],
-      sentimentScore: derivePercentages(regionalEvidence).sentimentScore,
+      label: ({ CN: '中国', JP: '日本', WEST: '欧美' })[region],
+      sentimentScore: percentages.sentimentScore,
       sampleCount: regionalEvidence.length,
-      topConcern: cleanString(candidate.topConcern, 80) || topics[0]?.label || '当前证据不足',
-      secondaryConcern: cleanString(candidate.secondaryConcern, 80) || topics[1]?.label || '当前证据不足',
-      insight: cleanString(candidate.insight, 600) || '当前公开证据不足以形成稳定的地区结论。',
+      topConcern: topics[0]?.label || '当前证据不足',
+      secondaryConcern: topics[1]?.label || '当前证据不足',
+      insight: regionalEvidence.length
+        ? `本次检索到 ${regionalEvidence.length} 条可验证公开页面；正面 ${percentages.positivePercent}%、中性 ${percentages.neutralPercent}%、负面 ${percentages.negativePercent}%。`
+        : '本次检索未获得该地区的可验证公开页面，不能形成地区结论。',
     }
   })
 }
@@ -570,25 +593,25 @@ function buildGroundedSummary(evidence, percentages) {
   return `当前实时证据快照共 ${evidence.length} 条：正面 ${percentages.positivePercent}% · 中性 ${percentages.neutralPercent}% · 负面 ${percentages.negativePercent}%。覆盖中国 ${regionCounts.CN} 条、日本 ${regionCounts.JP} 条、欧美 ${regionCounts.WEST} 条；${topicClause}结论仅代表本次检索到的公开页面。`
 }
 
-function buildReport(evidence, regional, strategy) {
-  if (!Array.isArray(strategy.controversies) || !strategy.controversies.length) {
-    throw new Error('策略 Agent 未返回可追溯的争议结论。')
-  }
-  if (!Array.isArray(strategy.recommendations) || !strategy.recommendations.length) {
-    throw new Error('策略 Agent 未返回可执行建议。')
-  }
+function buildReport(evidence, _regional, strategy) {
   const validIds = new Set(evidence.map((item) => item.id))
   const percentages = derivePercentages(evidence)
-  const controversies = strategy.controversies.slice(0, 5).map((item, index) => ({
-    id: `live-controversy-${index + 1}`,
-    title: cleanString(item.title, 160),
-    description: cleanString(item.description, 700),
-    severity: validRisk(item.severity),
-    region: ['GLOBAL', 'CN', 'JP', 'WEST'].includes(item.region) ? item.region : 'GLOBAL',
-    evidenceIds: sanitizeEvidenceIds(item.evidenceIds, validIds),
-    propagation: cleanString(item.propagation, 260) || '当前公开证据未形成可验证传播路径',
-  })).filter((item) => item.title && item.description && item.evidenceIds.length)
-  const recommendations = strategy.recommendations.slice(0, 6).map((item, index) => ({
+  const controversies = (Array.isArray(strategy.controversies) ? strategy.controversies : []).slice(0, 5).map((item, index) => {
+    const evidenceIds = sanitizeEvidenceIds(item.evidenceIds, validIds)
+    const citedSources = [...new Set(evidence
+      .filter((record) => evidenceIds.includes(record.id))
+      .map((record) => record.source))]
+    return {
+      id: `live-controversy-${index + 1}`,
+      title: cleanString(item.title, 160),
+      description: cleanString(item.description, 700),
+      severity: validRisk(item.severity),
+      region: ['GLOBAL', 'CN', 'JP', 'WEST'].includes(item.region) ? item.region : 'GLOBAL',
+      evidenceIds,
+      propagation: citedSources.length > 1 ? citedSources.join(' → ') : '未验证传播路径',
+    }
+  }).filter((item) => item.title && item.description && item.evidenceIds.length >= 2)
+  const recommendations = (Array.isArray(strategy.recommendations) ? strategy.recommendations : []).slice(0, 6).map((item, index) => ({
     id: `live-recommendation-${index + 1}`,
     priority: ['P0', 'P1', 'P2'].includes(item.priority) ? item.priority : 'P1',
     title: cleanString(item.title, 160),
@@ -597,15 +620,19 @@ function buildReport(evidence, regional, strategy) {
     region: ['GLOBAL', 'CN', 'JP', 'WEST'].includes(item.region) ? item.region : 'GLOBAL',
     evidenceIds: sanitizeEvidenceIds(item.evidenceIds, validIds),
   })).filter((item) => item.title && item.action && item.evidenceIds.length)
-  if (!controversies.length || !recommendations.length) throw new Error('策略 Agent 的结论缺少有效证据引用。')
+  const riskOrder = { low: 0, medium: 1, high: 2, critical: 3 }
+  const riskLevel = controversies.reduce(
+    (highest, item) => riskOrder[item.severity] > riskOrder[highest] ? item.severity : highest,
+    'low',
+  )
 
   return {
     summary: buildGroundedSummary(evidence, percentages),
-    riskLevel: validRisk(strategy.riskLevel),
+    riskLevel,
     sampleCount: evidence.length,
     ...percentages,
     trend: [{ label: '实时快照', positive: percentages.positivePercent, neutral: percentages.neutralPercent, negative: percentages.negativePercent }],
-    regions: sanitizeRegions(regional, evidence),
+    regions: sanitizeRegions(evidence),
     keywords: deriveKeywords(evidence),
     controversies,
     recommendations,
@@ -682,7 +709,8 @@ export async function runLiveResearch({
     }))
   }
   const evidence = (await Promise.all(retrievals)).flat()
-  if (!evidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未使用演示数据补位。')
+  if (!evidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未生成替代评论。')
+  assertVerifiedEvidence(evidence)
   emit('research', 'research', 'handoff', `真实检索完成，交接 ${evidence.length} 条带 URL 的公开证据`, 100, evidence.map((item) => item.id))
 
   emit('sentiment', 'sentiment', 'status', '玩家情绪 Agent 正在逐条分析真实证据', 8)
@@ -702,7 +730,7 @@ export async function runLiveResearch({
       apiKey,
       fetchImpl,
       role: '地区差异分析 Agent',
-      instruction: '返回 regions 数组，包含 CN、JP、WEST；字段为 region、label、sentimentScore、topConcern、secondaryConcern、insight。没有证据的地区必须明确写证据不足。',
+      instruction: '返回 regions 数组，包含 CN、JP、WEST；只能比较输入证据中明确出现的主题。没有证据的地区必须明确写证据不足，不得补充常识或假设。该输出仅用于执行日志，最终地区计数由程序从证据确定性派生。',
       payload: { task: safeRequest, evidence: modelEvidence },
     }).then((result) => {
       emit('regional', 'regional', 'handoff', '地区关注差异与证据缺口已完成', 100, evidence.map((item) => item.id))
@@ -711,6 +739,7 @@ export async function runLiveResearch({
   ])
 
   const analyzedEvidence = applySentimentAnalysis(evidence, sentiment)
+  assertVerifiedEvidence(analyzedEvidence)
   emit('sentiment', 'sentiment', 'handoff', '情绪分类、原因主题与中文释义已完成', 100, analyzedEvidence.map((item) => item.id), { evidenceRecords: analyzedEvidence })
   emit('strategy', 'strategy', 'status', '策略 Agent 已收到全部真实证据与上游结论', 16)
   const derivedMetrics = derivePercentages(analyzedEvidence)
@@ -719,7 +748,7 @@ export async function runLiveResearch({
     apiKey,
     fetchImpl,
     role: '策略建议 Agent',
-    instruction: '返回 summary、riskLevel、controversies、recommendations。每条争议含 title、description、severity、region、evidenceIds、propagation；每条建议含 priority、title、action、rationale、region、evidenceIds。所有结论必须引用输入中存在的证据 id；描述不得与 derivedMetrics 的确定性统计矛盾。',
+    instruction: '返回 summary、riskLevel、controversies、recommendations。每条争议含 title、description、severity、region、evidenceIds、propagation；每条建议含 priority、title、action、rationale、region、evidenceIds。所有结论必须引用输入中存在的证据 id；描述不得与 derivedMetrics 的确定性统计矛盾。证据不足以支持争议、传播路径或建议时，相应数组必须为空，不得为了完整格式而补造结论。',
     payload: { task: safeRequest, derivedMetrics, sentimentSummary: sentiment.summary, regional, evidence: evidenceForModel(analyzedEvidence) },
   })
   const report = buildReport(analyzedEvidence, regional, strategy)

@@ -19,7 +19,7 @@ import type { AgentId, AnalysisPreset, RuntimeTask } from '../../domain/types'
 
 interface TaskLobbyProps {
   recentTasks: RuntimeTask[]
-  onStart: (preset: AnalysisPreset, mode?: 'live' | 'demo') => void
+  onStart: (preset: AnalysisPreset) => void
   onOpenReport: (task: RuntimeTask) => void
 }
 
@@ -37,7 +37,6 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
   const [customGame, setCustomGame] = useState('')
   const [customUpdate, setCustomUpdate] = useState('')
   const [researchStatus, setResearchStatus] = useState<LiveResearchStatus | null>(null)
-  const [researchMode, setResearchMode] = useState<'live' | 'demo'>('demo')
   const isCustom = selection === 'custom'
   const selectedPreset = useMemo(
     () => analysisPresets.find((preset) => preset.id === selection) ?? analysisPresets[0],
@@ -54,22 +53,20 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
     client.getStatus().then((status) => {
       if (cancelled) return
       setResearchStatus(status)
-      if (status.configured) setResearchMode('live')
-    }).catch(() => undefined)
+    }).catch(() => {
+      if (!cancelled) setResearchStatus({ configured: false, model: '', retrieval: '', searchEndpoint: '' })
+    })
     return () => { cancelled = true }
   }, [])
 
   const handleStart = () => {
-    const start = (preset: AnalysisPreset) => {
-      if (researchMode === 'live') onStart({ ...preset, dataMode: 'live' }, 'live')
-      else onStart(preset)
-    }
+    if (!researchStatus?.configured) return
     if (isCustom) {
       if (!customGame.trim() || !customUpdate.trim()) return
-      start(createCustomPreset(customGame, customUpdate))
+      onStart(createCustomPreset(customGame, customUpdate))
       return
     }
-    start(selectedPreset)
+    onStart(selectedPreset)
   }
 
   const scrollToSection = (sectionId: string) => {
@@ -90,8 +87,8 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
           <button type="button" onClick={() => scrollToSection('recent-tasks')}>分析档案</button>
         </nav>
         <div className="header-status">
-          <span className="live-indicator"><i /> SYSTEM READY</span>
-          <span className="demo-label">概念演示 · 非官方产品</span>
+          <span className="live-indicator"><i /> {researchStatus?.configured ? 'LIVE READY' : 'CONFIG REQUIRED'}</span>
+          <span className="product-label">公开网络研究工具 · 非官方产品</span>
         </div>
       </header>
 
@@ -116,7 +113,7 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
 
           <div className="mission-meta">
             <div><GlobeHemisphereWest size={19} /><span>3 个核心市场</span></div>
-            <div><Database size={19} /><span>6 类公开来源</span></div>
+            <div><Database size={19} /><span>3 个真实检索通道</span></div>
             <div><Broadcast size={19} /><span>实时协作过程</span></div>
           </div>
 
@@ -126,29 +123,18 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                 <span className="panel-index">MISSION CONFIGURATION</span>
                 <h2 id="task-config-title">配置全球分析任务</h2>
               </div>
-              <span className={`snapshot-badge ${researchMode === 'live' ? 'is-live' : ''}`}>
-                {researchMode === 'live' ? 'REAL WEB · GLM AGENTS' : '演示数据快照'}
-              </span>
+              <span className="snapshot-badge is-live">REAL SOURCES ONLY</span>
             </div>
 
-            <div className="research-mode-selector" aria-label="研究数据模式">
-              <button
-                type="button"
-                className={researchMode === 'live' ? 'is-active' : ''}
-                onClick={() => researchStatus?.configured && setResearchMode('live')}
-                disabled={!researchStatus?.configured}
-              >
+            <div className="research-mode-selector real-only-selector" aria-label="真实研究连接状态">
+              <div className={`research-mode-card ${researchStatus?.configured ? 'is-active' : 'is-unavailable'}`}>
                 <Broadcast size={17} />
-                <span><strong>真实公开网络研究</strong><small>{researchStatus?.configured ? `${researchStatus.model.toUpperCase()} · ${researchStatus.retrieval}` : '需要桌面端 GLM 配置'}</small></span>
-              </button>
-              <button
-                type="button"
-                className={researchMode === 'demo' ? 'is-active' : ''}
-                onClick={() => setResearchMode('demo')}
-              >
+                <span><strong>真实公开网络研究</strong><small>{researchStatus?.configured ? `${researchStatus.model.toUpperCase()} · ${researchStatus.retrieval}` : '未检测到桌面端 GLM 配置，任务已锁定'}</small></span>
+              </div>
+              <div className="research-mode-card evidence-only-policy">
                 <Database size={17} />
-                <span><strong>确定性演示快照</strong><small>离线可重复 · synthetic 数据</small></span>
-              </button>
+                <span><strong>无模拟数据回退</strong><small>没有 HTTPS 来源与原始摘录时，任务直接停止</small></span>
+              </div>
             </div>
 
             <fieldset className="game-selector">
@@ -190,13 +176,13 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                   <span>版本或更新内容</span>
                   <input value={customUpdate} onChange={(event) => setCustomUpdate(event.target.value)} placeholder="例如：2.4 夏季活动" />
                 </label>
-                <p><Sparkle size={14} /> {researchMode === 'live' ? '将按你输入的游戏与更新实时检索公开网页，不使用通用演示评论。' : '自定义任务使用通用演示模板，不代表实时互联网数据。'}</p>
+                <p><Sparkle size={14} /> 将按你输入的游戏与更新实时检索公开网页；不会生成通用评论或填充缺失数据。</p>
               </div>
             ) : (
               <div className="version-readout">
                 <span>历史版本 / 更新内容</span>
                 <strong>{selectedPreset.version.label} · {selectedPreset.version.title}</strong>
-                <small>{researchMode === 'live' ? '启动后实时检索 · 结果数量取决于可访问公开来源' : `${selectedPreset.report.sampleCount.toLocaleString('zh-CN')} 条讨论快照 · ${selectedPreset.sources.length} 类公开来源`}</small>
+                <small>启动后实时检索 · 结果数量只取决于本次可访问的公开来源</small>
               </div>
             )}
 
@@ -208,9 +194,9 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                 className="primary-launch"
                 type="button"
                 onClick={handleStart}
-                disabled={isCustom && (!customGame.trim() || !customUpdate.trim())}
+                disabled={!researchStatus?.configured || (isCustom && (!customGame.trim() || !customUpdate.trim()))}
               >
-                <span>{researchMode === 'live' ? '启动真实研究' : '启动全球分析'}</span>
+                <span>{researchStatus?.configured ? '启动真实研究' : '真实研究未配置'}</span>
                 <ArrowRight size={20} weight="bold" />
               </button>
             </div>
@@ -258,7 +244,7 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
           </div>
 
           <div className="orbit-panel__footer">
-            <div><span>预计运行</span><strong>{researchMode === 'live' ? 'NETWORK DEPENDENT' : `${Math.round(displayedPreset.durationMs / 1000)} SEC`}</strong></div>
+            <div><span>预计运行</span><strong>NETWORK DEPENDENT</strong></div>
             <div><span>协作模式</span><strong>SEQUENTIAL + OVERLAP</strong></div>
             <div><span>输出</span><strong>DECISION REPORT</strong></div>
           </div>

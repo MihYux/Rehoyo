@@ -9,7 +9,7 @@ export interface GlmRuntimeConfig {
 export interface GlmAdvisorRequest {
   question: string
   localAnswer: string
-  dataMode?: 'demo' | 'live'
+  dataMode: 'live'
   evidence: Array<{
     id: string
     source: string
@@ -18,7 +18,7 @@ export interface GlmAdvisorRequest {
     sentiment: string
     topics: string[]
     title?: string
-    url?: string
+    url: string
   }>
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "rehoyo-global-player-intelligence",
-  "description": "ReHoYo Electron command center for grounded public-web game research agents and deterministic demos.",
+  "description": "ReHoYo Electron command center for evidence-grounded public-web game research agents.",
   "author": "ReHoYo",
   "private": true,
   "version": "0.1.0",

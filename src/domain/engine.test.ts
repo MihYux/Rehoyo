@@ -4,6 +4,7 @@ import type { AnalysisPreset } from './types'
 
 const preset: AnalysisPreset = {
   id: 'fixture',
+  dataMode: 'live',
   game: { id: 'game', name: '测试游戏', shortName: 'TEST', accent: '#67d8f2' },
   version: { id: 'v1', label: '1.0', title: '测试更新' },
   durationMs: 40_000,

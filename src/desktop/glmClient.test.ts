@@ -121,9 +121,10 @@ describe('GLM desktop advisor client', () => {
         id: `evidence-${index}`,
         source: 'Reddit',
         region: 'WEST',
-        excerptZh: '模拟证据',
+        excerptZh: '测试用公开网页摘录',
         sentiment: 'negative',
         topics: ['宣传落差'],
+        url: `https://www.reddit.com/r/example/comments/test-${index}`,
       })),
       apiKey: 'renderer-must-not-send-keys',
     })
@@ -132,5 +133,6 @@ describe('GLM desktop advisor client', () => {
     expect(request.evidence).toHaveLength(12)
     expect(request).not.toHaveProperty('apiKey')
     expect(() => sanitizeGlmAdvisorRequest({ question: '  ', localAnswer: '', evidence: [] })).toThrow(/question/i)
+    expect(() => sanitizeGlmAdvisorRequest({ question: '有效问题', localAnswer: '', evidence: [{ id: 'x', excerptZh: '无来源' }] })).toThrow(/verified HTTPS/i)
   })
 })

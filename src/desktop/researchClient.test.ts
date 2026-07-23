@@ -237,7 +237,7 @@ describe('live research agent orchestration', () => {
         return response({ id: 'strategy-1', model: 'glm-5.2', choices: [{ message: { content: JSON.stringify({
           summary: '真实公开网页证据显示地区关注点存在差异。',
           riskLevel: 'high',
-          controversies: [{ title: '剧情节奏与版本预期落差', description: '部分讨论认为叙事推进仓促。', severity: 'high', region: 'WEST', evidenceIds: ['live-west-001'], propagation: 'Reddit 主题讨论 → 跨平台复述' }],
+          controversies: [{ title: '剧情节奏与版本预期落差', description: '部分讨论认为叙事推进仓促。', severity: 'high', region: 'GLOBAL', evidenceIds: ['live-west-001', 'live-cn-001'], propagation: '模型不应决定传播路径' }],
           recommendations: [{ priority: 'P0', title: '校准剧情传播预期', action: '在版本传播材料中展示完整叙事节奏。', rationale: '回应可核验的剧情节奏证据。', region: 'GLOBAL', evidenceIds: ['live-west-001'] }],
         }) } }] })
       }
@@ -291,6 +291,7 @@ describe('live research agent orchestration', () => {
       ['JP', 100],
       ['WEST', 0],
     ])
-    expect(preset.report.controversies[0].evidenceIds).toEqual(['live-west-001'])
+    expect(preset.report.controversies[0].evidenceIds).toEqual(['live-west-001', 'live-cn-001'])
+    expect(preset.report.controversies[0].propagation).toBe('Reddit → Bilibili')
   })
 })

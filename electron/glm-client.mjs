@@ -88,26 +88,26 @@ export function sanitizeGlmAdvisorRequest(value) {
         : [],
       title: cleanString(item?.title, 300),
       url: /^https:\/\//.test(String(item?.url || '')) ? cleanString(item.url, 1_000) : '',
-    })).filter((item) => item.id && item.excerptZh)
+    })).filter((item) => item.id && item.excerptZh && item.url)
     : []
+
+  if (!evidence.length) throw new Error('Advisor requests require at least one verified HTTPS evidence record.')
 
   return {
     question,
     localAnswer: cleanString(input.localAnswer, 4000),
     evidence,
-    dataMode: input.dataMode === 'live' ? 'live' : 'demo',
+    dataMode: 'live',
   }
 }
 
 function buildMessages(request) {
-  const groundingRule = request.dataMode === 'live'
-    ? '输入证据来自本次任务实时检索到的公开网页或 RSS，带有可核验 URL。只能依据这些证据回答，不得声称已读取 URL 之外的完整评论区，也不得补造玩家数量或观点。'
-    : '仅依据用户提供的确定性演示数据快照回答，不得声称访问了实时社区或真实玩家数据。'
+  const groundingRule = '输入证据来自本次任务实时检索到的公开网页或 RSS，带有可核验 URL。只能依据这些证据回答，不得声称已读取 URL 之外的完整评论区，也不得补造玩家数量或观点。'
   return [
     {
       role: 'system',
       content: [
-        '你是 ReHoYo Electron 应用开发集成测试中的游戏版本决策顾问。',
+        '你是 ReHoYo Electron 应用中的游戏版本决策顾问。',
         groundingRule,
         '使用简洁中文给出结论，并在相关判断后保留方括号证据编号，例如 [gi-west-02]。',
         '证据不足时必须明确说明，不得补造事实。',

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { createGroundedTestPreset } from '../../src/test/groundedFixture'
 
 async function aaViolations(page: Page) {
   const audit = await new AxeBuilder({ page })
@@ -13,6 +14,49 @@ async function aaViolations(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  const fixture = createGroundedTestPreset()
+  await page.addInitScript(({ preset }) => {
+    const listeners: Array<(payload: unknown) => void> = []
+    Object.defineProperty(globalThis, 'rehoyoDesktop', {
+      configurable: true,
+      value: {
+        isElectron: true,
+        platform: 'win32',
+        advisor: {
+          getStatus: async () => ({ configured: false, endpoint: 'open.bigmodel.cn', model: 'glm-5.2' }),
+          ask: async () => ({ ok: false, error: 'E2E uses the local real-evidence answer.' }),
+        },
+        research: {
+          getStatus: async () => ({ configured: true, model: 'glm-5.2', retrieval: 'E2E verified HTTPS fixture', searchEndpoint: 'open.bigmodel.cn' }),
+          onEvent: (listener: (payload: unknown) => void) => {
+            listeners.push(listener)
+            return () => {
+              const index = listeners.indexOf(listener)
+              if (index >= 0) listeners.splice(index, 1)
+            }
+          },
+          run: async (request: { runId: string; gameName: string; versionLabel: string; versionTitle: string }) => {
+            const resultPreset = {
+              ...preset,
+              id: `live-e2e-${encodeURIComponent(request.gameName)}`,
+              game: { ...preset.game, id: 'live-e2e-game', name: request.gameName },
+              version: { ...preset.version, id: 'live-e2e-version', label: request.versionLabel, title: request.versionTitle },
+            }
+            const sourceEvent = { ...resultPreset.events[1], evidenceRecords: resultPreset.evidence }
+            listeners.forEach((listener) => listener({ runId: request.runId, event: sourceEvent }))
+            return new Promise((resolve) => {
+              Object.assign(globalThis, {
+                __completeRehoyoResearch: () => {
+                  resultPreset.events.forEach((event) => listeners.forEach((listener) => listener({ runId: request.runId, event })))
+                  resolve({ ok: true, preset: resultPreset })
+                },
+              })
+            })
+          },
+        },
+      },
+    })
+  }, { preset: fixture })
   await page.goto('/')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
@@ -37,7 +81,7 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
   expect(await aaViolations(page)).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('01-lobby.png'), fullPage: true })
 
-  await page.getByRole('button', { name: /启动全球分析/ }).click()
+  await page.getByRole('button', { name: /启动真实研究/ }).click()
   await expect(page.getByRole('heading', { name: 'Agent 协作空间' })).toBeVisible()
   const browserCards = page.getByRole('button', { name: /Agent 迷你浏览器/ })
   await expect(browserCards).toHaveCount(4)
@@ -58,6 +102,7 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
   await expect(page.getByRole('heading', { name: 'Agent 任务检查器' })).toBeVisible()
   await expect(page.getByText('任务目标', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('02-workspace.png'), fullPage: true })
+  await page.evaluate(() => (globalThis as typeof globalThis & { __completeRehoyoResearch: () => void }).__completeRehoyoResearch())
 
   await expect(page.getByRole('heading', { name: '全球玩家洞察报告' })).toBeVisible({ timeout: 10_000 })
   await expect(page).toHaveURL(/\/report\?tab=overview/)
@@ -66,11 +111,11 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
 
   await page.getByRole('tab', { name: '地区差异' }).click()
   await expect(page).toHaveURL(/tab=regions/)
-  await expect(page.getByText('地区关注点对照')).toBeVisible()
+  await expect(page.getByText('地区证据覆盖与情绪构成')).toBeVisible()
 
   await page.getByRole('tab', { name: '争议与证据' }).click()
   await page.getByLabel('地区筛选').selectOption('JP')
-  await expect(page.locator('.evidence-grid > article')).toHaveCount(3)
+  await expect(page.locator('.evidence-grid > article')).toHaveCount(1)
 
   await page.getByRole('button', { name: /打开 AI 游戏顾问/ }).click()
   await expect(page.getByRole('heading', { name: '版本决策顾问' })).toBeVisible()
@@ -90,12 +135,12 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
 
 test('creates a custom task only after required fields are entered', async ({ page }) => {
   await page.getByRole('button', { name: /自定义游戏/ }).click()
-  const launchButton = page.getByRole('button', { name: /启动全球分析/ })
+  const launchButton = page.getByRole('button', { name: /启动真实研究/ })
   await expect(launchButton).toBeDisabled()
   await page.getByLabel('游戏名称').fill('Project Aurora')
   await page.getByLabel('版本或更新内容').fill('Season Zero')
   await expect(launchButton).toBeEnabled()
   await launchButton.click()
-  await expect(page.getByText('通用演示模板')).toBeVisible()
+  await expect(page.getByText('自定义研究目标')).toBeVisible()
   await expect(page.getByText(/Project Aurora/)).toBeVisible()
 })

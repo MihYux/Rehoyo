@@ -6,6 +6,7 @@ test('launches ReHoYo in a secured Electron window', async () => {
     env: {
       ...process.env,
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+      REHOYO_DISABLE_LOCAL_CONFIG: '1',
     },
   })
 

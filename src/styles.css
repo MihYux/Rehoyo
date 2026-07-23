@@ -111,7 +111,7 @@ a { color: inherit; text-decoration: none; }
 .header-status { display: flex; align-items: flex-end; flex-direction: column; gap: 5px; justify-self: end; }
 .live-indicator, .team-status { color: var(--signal-300); font: 500 10px/1 'IBM Plex Mono', monospace; letter-spacing: 0.08em; }
 .live-indicator i, .team-status i { display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--signal-400); box-shadow: 0 0 10px var(--signal-400); animation: live-pulse 1.8s ease-in-out infinite; }
-.demo-label { color: #667087; font-size: 10px; }
+.product-label { color: #667087; font-size: 10px; }
 
 .lobby-main {
   position: relative;
@@ -494,7 +494,7 @@ body { overflow-x: hidden; }
 
 .brand-mark__descriptor small,
 .global-nav button,
-.demo-label,
+.product-label,
 .workspace-breadcrumb span,
 .workspace-clock span,
 .report-mission span,
@@ -694,6 +694,65 @@ body { overflow-x: hidden; }
 .primary-launch,
 .primary-launch > span {
   color: #ffffff !important;
+}
+
+.research-mode-card {
+  display: grid;
+  grid-template-columns: 25px 1fr;
+  gap: 8px;
+  align-items: center;
+  min-height: 52px;
+  padding: 9px 12px;
+  border: 1px solid #cfd9e2;
+  border-radius: 6px;
+  color: #475467;
+  background: #ffffff;
+  text-align: left;
+}
+
+.research-mode-card > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.research-mode-card.is-active {
+  border-color: #63adbd;
+  color: #0b687d;
+  background: #eff8fa;
+  box-shadow: inset 2px 0 0 #16839b;
+}
+
+.research-mode-card.is-active strong,
+.research-mode-card.is-active small {
+  color: #0b5366 !important;
+}
+
+.research-mode-card.is-unavailable {
+  border-color: #dfb9bf;
+  color: #9d3f51;
+  background: #fff7f8;
+}
+
+.evidence-only-policy {
+  border-color: #d8caa9;
+  color: #765514;
+  background: #fffdf7;
+}
+
+.evidence-only-policy strong,
+.evidence-only-policy small {
+  color: #69480d !important;
+}
+
+.evidence-gap-message {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #d8e0e7;
+  border-radius: 5px;
+  color: #596579;
+  background: #f8fafb;
 }
 
 /* Agent workspace */

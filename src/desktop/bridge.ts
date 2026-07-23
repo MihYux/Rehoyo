@@ -7,7 +7,7 @@ export interface LiveAdvisorStatus {
 export interface LiveAdvisorRequest {
   question: string
   localAnswer: string
-  dataMode?: 'demo' | 'live'
+  dataMode: 'live'
   evidence: Array<{
     id: string
     source: string
@@ -16,7 +16,7 @@ export interface LiveAdvisorRequest {
     sentiment: string
     topics: string[]
     title?: string
-    url?: string
+    url: string
   }>
 }
 

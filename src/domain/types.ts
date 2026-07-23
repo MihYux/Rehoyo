@@ -59,9 +59,9 @@ export interface EvidenceRecord {
   engagement: number
   publishedLabel: string
   title?: string
-  url?: string
-  retrievedAt?: string
-  synthetic: boolean
+  url: string
+  retrievedAt: string
+  synthetic: false
 }
 
 export interface TrendPoint {
@@ -144,7 +144,7 @@ export interface AnalysisPreset {
   report: InsightReport
   advisorAnswers: AdvisorAnswer[]
   isGeneric?: boolean
-  dataMode?: 'demo' | 'live'
+  dataMode: 'live'
 }
 
 export interface RuntimeTask {
@@ -157,7 +157,7 @@ export interface RuntimeTask {
   elapsedMs: number
   visibleEventIds: string[]
   completedAt?: number
-  dataMode?: 'demo' | 'live'
+  dataMode: 'live'
   presetSnapshot?: AnalysisPreset
 }
 

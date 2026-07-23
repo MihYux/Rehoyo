@@ -3,9 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App, { AppRoutes } from './App'
-import { analysisPresets } from './data/presets'
-import { advanceToElapsedTime, startTask } from './domain/engine'
 import { saveCompletedTask } from './domain/storage'
+import { createGroundedCompletedTask } from './test/groundedFixture'
 
 vi.mock('./features/report/ReportDashboard', () => ({
   ReportDashboard: ({ onOpenAdvisor }: { onOpenAdvisor: () => void }) => (
@@ -22,6 +21,15 @@ describe('App routes', () => {
     localStorage.clear()
     window.history.replaceState({}, '', '/')
     window.location.hash = ''
+    window.rehoyoDesktop = {
+      isElectron: true,
+      platform: 'win32',
+      research: {
+        getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'verified test retrieval', searchEndpoint: 'open.bigmodel.cn' })),
+        run: vi.fn(() => new Promise<never>(() => undefined)),
+        onEvent: vi.fn(() => () => undefined),
+      },
+    }
   })
 
   it('renders the task lobby at the root route', () => {
@@ -52,15 +60,14 @@ describe('App routes', () => {
       </MemoryRouter>,
     )
 
-    await user.click(screen.getByRole('button', { name: '启动全球分析' }))
+    await user.click(await screen.findByRole('button', { name: '启动真实研究' }))
 
     expect(await screen.findByRole('heading', { name: 'Agent 协作空间' })).toBeInTheDocument()
   })
 
   it('restores a completed report and unlocks the grounded advisor', async () => {
     const user = userEvent.setup()
-    const preset = analysisPresets[0]
-    const task = advanceToElapsedTime(preset, startTask(preset, 1_000), preset.durationMs)
+    const task = createGroundedCompletedTask()
     saveCompletedTask(task)
 
     render(
@@ -78,7 +85,7 @@ describe('App routes', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: '启动全球分析' }))
+    await user.click(await screen.findByRole('button', { name: '启动真实研究' }))
 
     expect(window.location.pathname).toBe('/')
     expect(window.location.hash).toMatch(/^#\/tasks\/[^/]+\/run$/)

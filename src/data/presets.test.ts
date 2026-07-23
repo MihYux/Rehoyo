@@ -1,37 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { analysisPresets } from './presets'
+import { analysisPresets, createCustomPreset } from './presets'
 
-describe('analysis presets', () => {
-  it('provides three deterministic flagship cases', () => {
+describe('real research targets', () => {
+  it('provides three flagship targets without bundled player claims', () => {
     expect(analysisPresets.map((preset) => preset.game.name)).toEqual([
       '原神',
       '崩坏：星穹铁道',
       '绝区零',
     ])
+
+    for (const preset of analysisPresets) {
+      expect(preset.dataMode).toBe('live')
+      expect(preset.agents).toHaveLength(4)
+      expect(preset.evidence).toEqual([])
+      expect(preset.events).toEqual([])
+      expect(preset.report.sampleCount).toBe(0)
+      expect(preset.report.controversies).toEqual([])
+      expect(preset.report.recommendations).toEqual([])
+      expect(preset.advisorAnswers).toEqual([])
+    }
   })
 
-  it.each(analysisPresets)('$game.name keeps report totals and evidence references consistent', (preset) => {
-    const evidenceIds = new Set(preset.evidence.map((item) => item.id))
-    const referencedIds = [
-      ...preset.events.flatMap((event) => event.evidenceIds),
-      ...preset.report.controversies.flatMap((item) => item.evidenceIds),
-      ...preset.report.recommendations.flatMap((item) => item.evidenceIds),
-      ...preset.advisorAnswers.flatMap((item) => item.evidenceIds),
-    ]
-
-    expect(preset.agents).toHaveLength(4)
-    expect(preset.events.map((event) => event.offsetMs)).toEqual(
-      [...preset.events].sort((a, b) => a.offsetMs - b.offsetMs).map((event) => event.offsetMs),
-    )
-    expect(preset.report.regions.reduce((sum, region) => sum + region.sampleCount, 0)).toBe(
-      preset.report.sampleCount,
-    )
-    expect(
-      preset.report.positivePercent +
-        preset.report.neutralPercent +
-        preset.report.negativePercent,
-    ).toBe(100)
-    expect(preset.evidence.every((item) => item.synthetic)).toBe(true)
-    expect(referencedIds.every((id) => evidenceIds.has(id))).toBe(true)
+  it('creates custom targets without copying a preset report or comments', () => {
+    const preset = createCustomPreset('测试游戏', '2.4 更新')
+    expect(preset).toMatchObject({ dataMode: 'live', isGeneric: true })
+    expect(preset.evidence).toEqual([])
+    expect(preset.report.sampleCount).toBe(0)
   })
 })
