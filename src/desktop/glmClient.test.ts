@@ -220,7 +220,9 @@ describe('GLM desktop advisor client', () => {
       request: groundedRequest,
       fetchImpl,
       getApiKey: async () => 'provider-test-key',
-      onEvent: (event) => deltas.push(event.content),
+      onEvent: (event) => {
+        deltas.push(event.content)
+      },
     })
 
     expect(deltas).toEqual(['## 地区结论\n\n', '- 中国：强度'])

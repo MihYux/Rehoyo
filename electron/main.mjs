@@ -16,6 +16,7 @@ import {
   readGlmLaunchEnvironment,
   requestGlmAdvisor,
   sanitizeGlmAdvisorRequest,
+  streamGlmAdvisor,
 } from './glm-client.mjs'
 import { runLiveResearch, sanitizeResearchRequest } from './research-client.mjs'
 
@@ -46,6 +47,16 @@ try {
 let mainWindow = null
 let connectionManager = null
 let ipcRegistered = false
+const activeAdvisorStreams = new Map()
+const activeResearchRuns = new Set()
+
+function advisorStreamKey(senderId, requestId) {
+  return `${senderId}:${requestId}`
+}
+
+function sendAdvisorEvent(sender, payload) {
+  if (!sender.isDestroyed()) sender.send('rehoyo:advisor:event', payload)
+}
 
 function currentGlmConfig() {
   const status = connectionManager?.getStatus()
@@ -80,6 +91,74 @@ function registerIpcHandlers() {
       const message = error instanceof Error ? error.message : 'GLM request failed.'
       return { ok: false, error: message.slice(0, 240) }
     }
+  })
+  ipcMain.handle('rehoyo:advisor:stream', async (event, input) => {
+    const requestId = String(input?.requestId || '').trim().slice(0, 160)
+    if (!requestId) return { ok: false, error: 'An advisor request id is required.' }
+
+    const key = advisorStreamKey(event.sender.id, requestId)
+    if (activeAdvisorStreams.has(key)) {
+      return { ok: false, error: 'This advisor request is already streaming.' }
+    }
+
+    let request
+    try {
+      request = sanitizeGlmAdvisorRequest(input?.request)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid advisor request.'
+      return { ok: false, error: message.slice(0, 240) }
+    }
+
+    const controller = new AbortController()
+    const handleDestroyed = () => controller.abort(new DOMException('Advisor window closed.', 'AbortError'))
+    activeAdvisorStreams.set(key, controller)
+    event.sender.once('destroyed', handleDestroyed)
+    sendAdvisorEvent(event.sender, {
+      requestId,
+      type: 'start',
+      model: currentGlmConfig().model,
+    })
+
+    try {
+      const response = await streamGlmAdvisor({
+        config: currentGlmConfig(),
+        request,
+        getApiKey: () => connectionManager.getApiKey(),
+        signal: controller.signal,
+        onEvent: ({ content }) => sendAdvisorEvent(event.sender, {
+          requestId,
+          type: 'delta',
+          content,
+        }),
+      })
+      sendAdvisorEvent(event.sender, {
+        requestId,
+        type: 'complete',
+        model: response.model,
+      })
+      return { ok: true, ...response }
+    } catch (error) {
+      const cancelled = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')
+      const message = cancelled
+        ? 'Advisor generation stopped.'
+        : error instanceof Error ? error.message : 'GLM request failed.'
+      sendAdvisorEvent(event.sender, {
+        requestId,
+        type: cancelled ? 'cancelled' : 'error',
+        error: message.slice(0, 240),
+      })
+      return { ok: false, error: message.slice(0, 240), cancelled }
+    } finally {
+      activeAdvisorStreams.delete(key)
+      event.sender.removeListener('destroyed', handleDestroyed)
+    }
+  })
+  ipcMain.handle('rehoyo:advisor:cancel', (event, requestIdValue) => {
+    const requestId = String(requestIdValue || '').trim().slice(0, 160)
+    const controller = activeAdvisorStreams.get(advisorStreamKey(event.sender.id, requestId))
+    if (!controller) return { ok: false, error: 'Advisor request is not active.' }
+    controller.abort(new DOMException('Stopped by user.', 'AbortError'))
+    return { ok: true }
   })
 
   ipcMain.handle('rehoyo:research:status', () => {
@@ -119,8 +198,6 @@ function registerIpcHandlers() {
     }
   })
 }
-
-const activeResearchRuns = new Set()
 
 async function createMainWindow() {
   const window = new BrowserWindow(createWindowOptions(preloadPath, iconPath))

@@ -40,11 +40,25 @@ export interface LiveAdvisorRequest {
 
 export type LiveAdvisorResult =
   | { ok: true; content: string; model: string; requestId: string }
-  | { ok: false; error: string }
+  | { ok: false; error: string; cancelled?: boolean }
+
+export type LiveAdvisorStreamEvent =
+  | { requestId: string; type: 'start'; model: string }
+  | { requestId: string; type: 'delta'; content: string }
+  | { requestId: string; type: 'complete'; model: string }
+  | { requestId: string; type: 'error' | 'cancelled'; error: string }
+
+export interface LiveAdvisorStreamRequest {
+  requestId: string
+  request: LiveAdvisorRequest
+}
 
 export interface LiveAdvisorClient {
   getStatus: () => Promise<LiveAdvisorStatus>
   ask: (request: LiveAdvisorRequest) => Promise<LiveAdvisorResult>
+  stream?: (request: LiveAdvisorStreamRequest) => Promise<LiveAdvisorResult>
+  cancel?: (requestId: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  onEvent?: (listener: (event: LiveAdvisorStreamEvent) => void) => () => void
 }
 
 export interface RehoyoDesktopBridge {

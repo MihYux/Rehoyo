@@ -11,6 +11,14 @@ contextBridge.exposeInMainWorld('rehoyoDesktop', Object.freeze({
   advisor: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:advisor:status'),
     ask: (request) => ipcRenderer.invoke('rehoyo:advisor:ask', request),
+    stream: (request) => ipcRenderer.invoke('rehoyo:advisor:stream', request),
+    cancel: (requestId) => ipcRenderer.invoke('rehoyo:advisor:cancel', requestId),
+    onEvent: (listener) => {
+      if (typeof listener !== 'function') return () => {}
+      const handler = (_event, payload) => listener(payload)
+      ipcRenderer.on('rehoyo:advisor:event', handler)
+      return () => ipcRenderer.removeListener('rehoyo:advisor:event', handler)
+    },
   }),
   research: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:research:status'),
