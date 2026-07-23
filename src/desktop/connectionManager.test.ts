@@ -119,6 +119,27 @@ describe('secure Electron connection manager', () => {
     await expect(readFile(path.join(userDataPath, 'rehoyo-connection.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('preserves a valid encrypted store when operating-system encryption is temporarily unavailable', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const availableManager = createConnectionManager({
+      userDataPath,
+      safeStorage: createSafeStorage(true),
+    })
+    await availableManager.initialize()
+    await availableManager.save({ apiKey: 'private-test-key', endpoint: BIGMODEL_CODING_ENDPOINT })
+
+    const unavailableManager = createConnectionManager({
+      userDataPath,
+      safeStorage: createSafeStorage(false),
+    })
+    await unavailableManager.initialize()
+
+    expect(unavailableManager.getStatus()).toMatchObject({ configured: false, persistence: 'none' })
+    const files = await readdir(userDataPath)
+    expect(files).toContain('rehoyo-connection.json')
+    expect(files.some((file) => file.endsWith('.invalid'))).toBe(false)
+  })
+
   it('prefers an explicit external configuration without exposing its key file', async () => {
     const userDataPath = await createUserDataDirectory()
     const externalGetApiKey = vi.fn(async () => 'external-test-key')

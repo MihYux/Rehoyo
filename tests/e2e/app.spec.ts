@@ -22,6 +22,18 @@ test.beforeEach(async ({ page }) => {
       value: {
         isElectron: true,
         platform: 'win32',
+        connection: {
+          getStatus: async () => ({
+            configured: true,
+            provider: 'bigmodel',
+            endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+            endpointHost: 'open.bigmodel.cn',
+            model: 'glm-5.2',
+            persistence: 'encrypted',
+          }),
+          save: async () => { throw new Error('E2E starts preconfigured.') },
+          clear: async () => ({ configured: false }),
+        },
         advisor: {
           getStatus: async () => ({ configured: false, endpoint: 'open.bigmodel.cn', model: 'glm-5.2' }),
           ask: async () => ({ ok: false, error: 'E2E uses the local real-evidence answer.' }),

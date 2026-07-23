@@ -126,6 +126,11 @@ export function createConnectionManager({
       encryptedApiKey = stored.encryptedApiKey
       source = 'encrypted'
     } catch (error) {
+      if (error?.code === 'ENCRYPTION_UNAVAILABLE') {
+        source = 'none'
+        encryptedApiKey = ''
+        return getStatus()
+      }
       if (error?.code !== 'ENOENT') await quarantineInvalidStore()
       source = 'none'
       encryptedApiKey = ''
