@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useState } from 'react'
 import {
   BrowserRouter,
   Navigate,
@@ -13,9 +13,17 @@ import { startTask } from './domain/engine'
 import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
 import { TaskLobby } from './features/lobby/TaskLobby'
-import { AdvisorWorkspace } from './features/advisor/AdvisorWorkspace'
-import { ReportDashboard, type ReportTab } from './features/report/ReportDashboard'
-import { TaskWorkspace } from './features/workspace/TaskWorkspace'
+import type { ReportTab } from './features/report/ReportDashboard'
+
+const TaskWorkspace = lazy(() =>
+  import('./features/workspace/TaskWorkspace').then((module) => ({ default: module.TaskWorkspace })),
+)
+const ReportDashboard = lazy(() =>
+  import('./features/report/ReportDashboard').then((module) => ({ default: module.ReportDashboard })),
+)
+const AdvisorWorkspace = lazy(() =>
+  import('./features/advisor/AdvisorWorkspace').then((module) => ({ default: module.AdvisorWorkspace })),
+)
 
 interface ActiveSession {
   preset: AnalysisPreset
@@ -137,31 +145,33 @@ export function AppRoutes() {
   return (
     <>
       <div className="app-desktop">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <TaskLobby
-                recentTasks={recentTasks}
-                onStart={handleStart}
-                onOpenReport={handleOpenReport}
-              />
-            }
-          />
-          <Route
-            path="/tasks/:taskId/run"
-            element={<GuardedRun session={session} onComplete={handleComplete} />}
-          />
-          <Route
-            path="/tasks/:taskId/report"
-            element={<GuardedReport session={session} recentTasks={recentTasks} />}
-          />
-          <Route
-            path="/tasks/:taskId/advisor"
-            element={<GuardedAdvisor session={session} recentTasks={recentTasks} />}
-          />
-          <Route path="*" element={<Navigate replace to="/" />} />
-        </Routes>
+        <Suspense fallback={<div className="route-loading" role="status"><i /> 正在载入智能工作空间…</div>}>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <TaskLobby
+                  recentTasks={recentTasks}
+                  onStart={handleStart}
+                  onOpenReport={handleOpenReport}
+                />
+              }
+            />
+            <Route
+              path="/tasks/:taskId/run"
+              element={<GuardedRun session={session} onComplete={handleComplete} />}
+            />
+            <Route
+              path="/tasks/:taskId/report"
+              element={<GuardedReport session={session} recentTasks={recentTasks} />}
+            />
+            <Route
+              path="/tasks/:taskId/advisor"
+              element={<GuardedAdvisor session={session} recentTasks={recentTasks} />}
+            />
+            <Route path="*" element={<Navigate replace to="/" />} />
+          </Routes>
+        </Suspense>
       </div>
       <div className="desktop-warning">
         <div>

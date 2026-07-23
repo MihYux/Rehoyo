@@ -99,7 +99,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
                   {!!turn.evidenceIds.length && (
                     <footer>
                       <span><Database size={12} /> 引用证据</span>
-                      {turn.evidenceIds.map((id) => <button type="button" key={id} aria-label={`查看证据 ${id}`} onClick={() => onOpenEvidence(id, turn.reportTab)}>{id}</button>)}
+                      {turn.evidenceIds.map((id) => <button type="button" key={id} aria-label={`查看证据 ${id}`} onClick={() => onOpenEvidence(id, 'controversies')}>{id}</button>)}
                     </footer>
                   )}
                 </div>
@@ -124,7 +124,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
                   <article key={item.id}>
                     <header><i>{String(index + 1).padStart(2, '0')}</i><span>{item.source}</span><small>{item.region}</small></header>
                     <blockquote>{item.excerptZh}</blockquote>
-                    <footer><span>{item.id}</span><button type="button" onClick={() => onOpenEvidence(item.id, activeTurn.reportTab)}>在报告中查看 <ArrowRight size={12} /></button></footer>
+                    <footer><span>{item.id}</span><button type="button" onClick={() => onOpenEvidence(item.id, 'controversies')}>在报告中查看 <ArrowRight size={12} /></button></footer>
                   </article>
                 ))}
                 {!activeEvidence.length && <div className="advisor-evidence-empty"><Database size={22} /><p>当前回答没有引用证据。尝试提出与报告内容相关的问题。</p></div>}

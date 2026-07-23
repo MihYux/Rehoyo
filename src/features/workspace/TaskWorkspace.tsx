@@ -101,12 +101,13 @@ export function TaskWorkspace({
   }, [clock, clockScale, preset])
 
   useEffect(() => {
-    if (task.status === 'completed' && !completionSent.current) {
-      completionSent.current = true
-      const timeout = window.setTimeout(() => onComplete(task), 1_100)
-      return () => window.clearTimeout(timeout)
-    }
-  }, [onComplete, task])
+    if (task.status !== 'completed' || completionSent.current) return
+
+    completionSent.current = true
+    const completedTask = task
+    const timeout = window.setTimeout(() => onComplete(completedTask), 1_100)
+    return () => window.clearTimeout(timeout)
+  }, [onComplete, task.status])
 
   const states = useMemo(() => deriveAgentStates(preset, task), [preset, task])
   const visibleEvents = useMemo(

@@ -7,8 +7,14 @@ import { analysisPresets } from './data/presets'
 import { advanceToElapsedTime, startTask } from './domain/engine'
 import { saveCompletedTask } from './domain/storage'
 
-vi.mock('echarts-for-react', () => ({
-  default: () => <div data-testid="echarts" />,
+vi.mock('./features/report/ReportDashboard', () => ({
+  ReportDashboard: ({ onOpenAdvisor }: { onOpenAdvisor: () => void }) => (
+    <div><h1>全球玩家洞察报告</h1><button type="button" onClick={onOpenAdvisor}>打开 AI 游戏顾问</button></div>
+  ),
+}))
+
+vi.mock('./features/advisor/AdvisorWorkspace', () => ({
+  AdvisorWorkspace: () => <h1>版本决策顾问</h1>,
 }))
 
 describe('App routes', () => {

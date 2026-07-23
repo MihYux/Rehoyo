@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { analysisPresets } from '../../data/presets'
@@ -29,5 +29,31 @@ describe('TaskWorkspace', () => {
     await user.click(screen.getByRole('button', { name: /地区差异 Agent/ }))
     expect(await screen.findByRole('heading', { name: 'Agent 任务检查器' })).toBeInTheDocument()
     expect(screen.getByText('比较中国、日本与欧美玩家的关注点和语义差异。')).toBeInTheDocument()
+  })
+
+  it('notifies completion once even while the runtime interval keeps ticking', async () => {
+    vi.useFakeTimers()
+    const preset = analysisPresets[0]
+    const onComplete = vi.fn()
+    const task = startTask(preset, 1_000)
+
+    render(
+      <TaskWorkspace
+        preset={preset}
+        initialTask={task}
+        clock={() => 1_000 + preset.durationMs}
+        onComplete={onComplete}
+      />,
+    )
+
+    for (let tick = 0; tick < 14; tick += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120)
+      })
+    }
+
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(onComplete.mock.calls[0][0]).toMatchObject({ status: 'completed' })
+    vi.useRealTimers()
   })
 })

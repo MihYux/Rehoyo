@@ -5,7 +5,7 @@ import { analysisPresets } from '../../data/presets'
 import { advanceToElapsedTime, startTask } from '../../domain/engine'
 import { ReportDashboard } from './ReportDashboard'
 
-vi.mock('echarts-for-react', () => ({
+vi.mock('echarts-for-react/esm/core', () => ({
   default: ({ option }: { option: unknown }) => <div data-testid="echarts" data-option={JSON.stringify(option)} />,
 }))
 

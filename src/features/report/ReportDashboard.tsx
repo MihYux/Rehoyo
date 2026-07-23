@@ -18,11 +18,20 @@ import {
   X,
 } from '@phosphor-icons/react'
 import * as Tabs from '@radix-ui/react-tabs'
-import ReactECharts from 'echarts-for-react'
+import { BarChart, LineChart } from 'echarts/charts'
+import {
+  GridComponent,
+  TooltipComponent,
+} from 'echarts/components'
+import * as echarts from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import ReactEChartsCore from 'echarts-for-react/esm/core'
 import { motion } from 'motion/react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BrandMark } from '../../components/BrandMark'
 import type { AnalysisPreset, RegionCode, RuntimeTask } from '../../domain/types'
+
+echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 export type ReportTab = 'overview' | 'regions' | 'controversies' | 'strategy'
 
@@ -60,6 +69,17 @@ export function ReportDashboard({
       (regionFilter === 'ALL' || item.region === regionFilter) &&
       (sourceFilter === 'ALL' || item.source === sourceFilter),
   )
+
+  useEffect(() => {
+    if (!highlightEvidenceId || tab !== 'controversies') return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`evidence-${highlightEvidenceId}`)?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'center',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [highlightEvidenceId, tab])
 
   const trendOption = useMemo(() => ({
     animationDuration: 700,
@@ -172,11 +192,11 @@ export function ReportDashboard({
             <div className="overview-grid">
               <article className="report-card report-card--wide">
                 <header><span><ChartLineUp size={16} /> 全球情绪趋势</span><small>POSITIVE / NEUTRAL / NEGATIVE</small></header>
-                <ReactECharts option={trendOption} style={{ height: 245 }} />
+                <ReactEChartsCore echarts={echarts} option={trendOption} style={{ height: 245 }} />
               </article>
               <article className="report-card">
                 <header><span><GlobeHemisphereWest size={16} /> 地区情绪指数</span><small>0–100</small></header>
-                <ReactECharts option={regionOption} style={{ height: 245 }} />
+                <ReactEChartsCore echarts={echarts} option={regionOption} style={{ height: 245 }} />
               </article>
               <article className="report-card report-card--keywords">
                 <header><span><Sparkle size={16} /> 热门讨论关键词</span><small>WEIGHTED TOPICS</small></header>
