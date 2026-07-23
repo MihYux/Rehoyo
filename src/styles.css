@@ -6,6 +6,7 @@
 @import '@fontsource/space-grotesk/600.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import 'tailwindcss';
+@source '../node_modules/streamdown/dist/*.js';
 
 :root {
   font-family: 'Noto Sans SC', sans-serif;
@@ -1492,6 +1493,58 @@ body { overflow-x: hidden; }
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Streaming advisor Markdown */
+.advisor-markdown {
+  min-width: 0;
+  margin: 12px 0;
+  color: #3f4b5f;
+  font-size: 10px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.advisor-markdown :where(h1, h2, h3, h4) {
+  margin: 14px 0 7px;
+  color: #202c3d;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.advisor-markdown :where(h1, h2) { font-size: 14px; }
+.advisor-markdown :where(h3, h4) { font-size: 12px; }
+.advisor-markdown :where(p, ul, ol, blockquote, pre, table) { margin: 8px 0; }
+.advisor-markdown :where(ul, ol) { padding-left: 20px; }
+.advisor-markdown li + li { margin-top: 4px; }
+.advisor-markdown strong { color: #27384c; font-weight: 650; }
+
+.advisor-markdown blockquote {
+  padding: 8px 12px;
+  border-left: 3px solid #45a0b9;
+  color: #536174;
+  background: #eef7f9;
+}
+
+.advisor-markdown :where(code, pre) { font-family: 'IBM Plex Mono', monospace; }
+.advisor-markdown code { padding: 2px 4px; color: #136e86; background: #edf4f6; }
+
+.advisor-markdown pre {
+  max-width: 100%;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid #d9e1e7;
+  color: #eaf5f7;
+  background: #20313c;
+}
+
+.advisor-markdown pre code { padding: 0; color: inherit; background: transparent; }
+.advisor-markdown table { width: 100%; border-collapse: collapse; }
+.advisor-markdown :where(th, td) { padding: 7px 8px; border: 1px solid #d9e1e7; text-align: left; }
+.advisor-markdown th { color: #26384a; background: #edf4f6; }
+.advisor-markdown a { color: #087f9c; text-decoration: underline; text-underline-offset: 2px; }
+.advisor-markdown a:focus-visible { outline: 2px solid #1687a1; outline-offset: 3px; }
+.advisor-stream-connecting { margin: 12px 0; color: #718094; font-size: 9px; }
+.advisor-composer button.is-stop { color: #ffffff; background: #b84f5f; }
 
 @media (max-width: 1279px) {
   .lobby-page, .app-desktop { display: none !important; }

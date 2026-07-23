@@ -8,11 +8,20 @@ import {
   PaperPlaneTilt,
   Quotes,
   Sparkle,
+  Stop,
 } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { defaultUrlTransform, Streamdown, type UrlTransform } from 'streamdown'
+import 'streamdown/styles.css'
 import { BrandMark } from '../../components/BrandMark'
-import { getLiveAdvisorClient, type LiveAdvisorClient, type LiveAdvisorStatus } from '../../desktop/bridge'
+import {
+  getLiveAdvisorClient,
+  type LiveAdvisorClient,
+  type LiveAdvisorRequest,
+  type LiveAdvisorStatus,
+  type LiveAdvisorStreamEvent,
+} from '../../desktop/bridge'
 import { getAdvisorResponse, type GroundedAdvisorResponse } from '../../domain/advisor'
 import type { AnalysisPreset } from '../../domain/types'
 import type { ReportTab } from '../report/ReportDashboard'
@@ -30,6 +39,30 @@ interface ConversationTurn extends GroundedAdvisorResponse {
   answerMode: 'live' | 'evidence'
   model?: string
   liveError?: string
+  requestId?: string
+  fallbackAnswer?: string
+  streamState?: 'streaming' | 'complete' | 'cancelled' | 'error'
+}
+
+const advisorUrlTransform: UrlTransform = (url, key, node) => {
+  const safeUrl = defaultUrlTransform(url, key, node)
+  if (!safeUrl) return null
+  return safeUrl.startsWith('https://') || safeUrl.startsWith('#') ? safeUrl : null
+}
+
+let fallbackRequestSequence = 0
+
+function createAdvisorRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  fallbackRequestSequence += 1
+  return `advisor-${Date.now()}-${fallbackRequestSequence}`
+}
+
+function getTurnStatus(turn: ConversationTurn) {
+  if (turn.answerMode !== 'live') return 'REAL EVIDENCE FALLBACK'
+  if (turn.streamState === 'streaming') return `${turn.model?.toLocaleUpperCase()} · STREAMING`
+  if (turn.streamState === 'cancelled' || turn.streamState === 'error') return `${turn.model?.toLocaleUpperCase()} · PARTIAL`
+  return `${turn.model?.toLocaleUpperCase()} · LIVE`
 }
 
 export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveAdvisor }: AdvisorWorkspaceProps) {
@@ -37,6 +70,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
   const [turns, setTurns] = useState<ConversationTurn[]>([])
   const [isAsking, setIsAsking] = useState(false)
   const [liveStatus, setLiveStatus] = useState<LiveAdvisorStatus>()
+  const activeRequestIdRef = useRef<string | undefined>(undefined)
   const advisorClient = useMemo(() => liveAdvisor ?? getLiveAdvisorClient(), [liveAdvisor])
   const suggestedQuestions = preset.advisorAnswers.length
     ? preset.advisorAnswers.map((item) => item.question)
@@ -64,14 +98,111 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
     }
   }, [advisorClient])
 
+  useEffect(() => {
+    if (!advisorClient?.onEvent) return undefined
+
+    const finishRequest = (requestId: string) => {
+      if (activeRequestIdRef.current !== requestId) return
+      activeRequestIdRef.current = undefined
+      setIsAsking(false)
+    }
+
+    const updateStreamingTurn = (event: LiveAdvisorStreamEvent) => {
+      if (activeRequestIdRef.current !== event.requestId) return
+      setTurns((current) => current.map((turn) => {
+        if (turn.requestId !== event.requestId) return turn
+        if (event.type === 'start') return { ...turn, model: event.model, streamState: 'streaming' }
+        if (event.type === 'delta') return { ...turn, answer: `${turn.answer}${event.content}` }
+        if (event.type === 'complete') return { ...turn, model: event.model, streamState: 'complete' }
+
+        const hasPartialAnswer = Boolean(turn.answer.trim())
+        const isCancelled = event.type === 'cancelled'
+        return {
+          ...turn,
+          answer: hasPartialAnswer ? turn.answer : turn.fallbackAnswer || turn.answer,
+          answerMode: hasPartialAnswer ? 'live' : 'evidence',
+          streamState: event.type,
+          liveError: isCancelled
+            ? '已停止生成，已保留当前内容。'
+            : hasPartialAnswer
+              ? `回答未完成：${event.error}`
+              : `实时模型不可用，已回退本地证据：${event.error}`,
+        }
+      }))
+
+      if (event.type === 'complete' || event.type === 'error' || event.type === 'cancelled') {
+        finishRequest(event.requestId)
+      }
+    }
+
+    const unsubscribe = advisorClient.onEvent(updateStreamingTurn)
+    return () => {
+      unsubscribe()
+      const requestId = activeRequestIdRef.current
+      activeRequestIdRef.current = undefined
+      if (requestId && advisorClient.cancel) void advisorClient.cancel(requestId)
+    }
+  }, [advisorClient])
+
   const appendEvidenceTurn = (question: string, response: GroundedAdvisorResponse, liveError?: string) => {
     setTurns((current) => [...current, {
       ...response,
       id: `turn-${current.length + 1}`,
       question,
       answerMode: 'evidence',
-      liveError,
+      liveError: liveError ? `实时模型不可用，已回退本地证据：${liveError}` : undefined,
     }])
+  }
+
+  const buildLiveRequest = (question: string, response: GroundedAdvisorResponse): LiveAdvisorRequest => ({
+    question,
+    localAnswer: response.answer,
+    dataMode: 'live',
+    evidence: preset.evidence
+      .filter((item) => response.evidenceIds.includes(item.id))
+      .map((item) => ({
+        id: item.id,
+        source: item.source,
+        region: item.region,
+        excerptZh: item.excerptZh,
+        sentiment: item.sentiment,
+        topics: item.topics,
+        title: item.title,
+        url: item.url,
+      })),
+  })
+
+  const settleStreamWithoutEvent = (
+    requestId: string,
+    result: Awaited<ReturnType<NonNullable<LiveAdvisorClient['stream']>>>,
+  ) => {
+    if (activeRequestIdRef.current !== requestId) return
+    setTurns((current) => current.map((turn) => {
+      if (turn.requestId !== requestId) return turn
+      if (result.ok) {
+        return {
+          ...turn,
+          answer: turn.answer || result.content,
+          model: result.model,
+          streamState: 'complete',
+        }
+      }
+
+      const hasPartialAnswer = Boolean(turn.answer.trim())
+      return {
+        ...turn,
+        answer: hasPartialAnswer ? turn.answer : turn.fallbackAnswer || turn.answer,
+        answerMode: hasPartialAnswer ? 'live' : 'evidence',
+        streamState: result.cancelled ? 'cancelled' : 'error',
+        liveError: result.cancelled
+          ? '已停止生成，已保留当前内容。'
+          : hasPartialAnswer
+            ? `回答未完成：${result.error}`
+            : `实时模型不可用，已回退本地证据：${result.error}`,
+      }
+    }))
+    activeRequestIdRef.current = undefined
+    setIsAsking(false)
   }
 
   const ask = async (question: string) => {
@@ -92,24 +223,27 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
 
     setIsAsking(true)
     try {
-      const evidence = preset.evidence
-        .filter((item) => response.evidenceIds.includes(item.id))
-        .map((item) => ({
-          id: item.id,
-          source: item.source,
-          region: item.region,
-          excerptZh: item.excerptZh,
-          sentiment: item.sentiment,
-          topics: item.topics,
-          title: item.title,
-          url: item.url,
-        }))
-      const result = await advisorClient.ask({
-        question: trimmed,
-        localAnswer: response.answer,
-        dataMode: 'live',
-        evidence,
-      })
+      const liveRequest = buildLiveRequest(trimmed, response)
+      if (advisorClient.stream && advisorClient.onEvent && advisorClient.cancel) {
+        const requestId = createAdvisorRequestId()
+        activeRequestIdRef.current = requestId
+        setTurns((current) => [...current, {
+          ...response,
+          answer: '',
+          fallbackAnswer: response.answer,
+          id: requestId,
+          requestId,
+          question: trimmed,
+          answerMode: 'live',
+          model: liveStatus.model,
+          streamState: 'streaming',
+        }])
+        const result = await advisorClient.stream({ requestId, request: liveRequest })
+        settleStreamWithoutEvent(requestId, result)
+        return
+      }
+
+      const result = await advisorClient.ask(liveRequest)
 
       if (!result.ok) {
         appendEvidenceTurn(trimmed, response, result.error)
@@ -124,15 +258,32 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
         answerMode: 'live',
         model: result.model,
       }])
-    } catch {
-      appendEvidenceTurn(trimmed, response, '实时模型请求失败')
+    } catch (error) {
+      const requestId = activeRequestIdRef.current
+      if (requestId) {
+        settleStreamWithoutEvent(requestId, {
+          ok: false,
+          error: error instanceof Error ? error.message : '实时模型请求失败',
+        })
+      } else {
+        appendEvidenceTurn(trimmed, response, '实时模型请求失败')
+      }
     } finally {
-      setIsAsking(false)
+      if (!activeRequestIdRef.current) setIsAsking(false)
     }
+  }
+
+  const stopGenerating = () => {
+    const requestId = activeRequestIdRef.current
+    if (requestId && advisorClient?.cancel) void advisorClient.cancel(requestId)
   }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (isAsking) {
+      stopGenerating()
+      return
+    }
     void ask(input)
   }
 
@@ -187,10 +338,21 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
                     <Brain size={15} weight="duotone" />
                     <span>REHOYO ADVISOR</span>
                     {turn.isFallback && <small>证据不足</small>}
-                    <small className={turn.answerMode === 'live' ? 'is-live' : ''}>{turn.answerMode === 'live' ? `${turn.model?.toLocaleUpperCase()} · LIVE` : 'REAL EVIDENCE FALLBACK'}</small>
+                    <small className={turn.answerMode === 'live' ? 'is-live' : ''}>{getTurnStatus(turn)}</small>
                   </header>
-                  <p>{turn.answer}</p>
-                  {turn.liveError && <div className="advisor-live-error">实时模型不可用，已回退本地证据：{turn.liveError}</div>}
+                  {turn.answer ? (
+                    <div className="advisor-markdown">
+                      <Streamdown
+                        mode={turn.streamState === 'streaming' ? 'streaming' : 'static'}
+                        isAnimating={turn.streamState === 'streaming'}
+                        skipHtml
+                        urlTransform={advisorUrlTransform}
+                      >
+                        {turn.answer}
+                      </Streamdown>
+                    </div>
+                  ) : <div className="advisor-stream-connecting">正在建立安全流式连接…</div>}
+                  {turn.liveError && <div className="advisor-live-error">{turn.liveError}</div>}
                   {!!turn.evidenceIds.length && (
                     <footer>
                       <span><Database size={12} /> 引用证据</span>
@@ -200,12 +362,15 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
                 </div>
               </motion.div>
             ))}
-            {isAsking && <div className="advisor-pending"><Brain size={15} weight="duotone" /><span>GLM 正在综合当前证据链…</span></div>}
+            {isAsking && !activeTurn?.answer && <div className="advisor-pending"><Brain size={15} weight="duotone" /><span>GLM 正在综合当前证据链…</span></div>}
           </div>
           <form className="advisor-composer" onSubmit={submit}>
             <MagnifyingGlass size={18} />
             <input aria-label="向 AI 游戏顾问提问" value={input} disabled={isAsking} onChange={(event) => setInput(event.target.value)} placeholder="询问地区差异、版本风险或下一步策略…" />
-            <button type="submit" disabled={!input.trim() || isAsking}><span>{isAsking ? '分析中' : '发送问题'}</span><PaperPlaneTilt size={16} weight="fill" /></button>
+            <button type="submit" className={isAsking ? 'is-stop' : ''} disabled={!isAsking && !input.trim()}>
+              <span>{isAsking ? '停止生成' : '发送问题'}</span>
+              {isAsking ? <Stop size={15} weight="fill" /> : <PaperPlaneTilt size={16} weight="fill" />}
+            </button>
           </form>
           <p className="advisor-composer-note">AI 回答仅基于当前任务实际检索到的公开网页证据；不代表全部玩家总体。</p>
         </section>
