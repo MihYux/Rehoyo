@@ -103,6 +103,36 @@ $env:REHOYO_GLM_MODEL = "glm-5.2"
 npm run dev
 ```
 
+macOS / Linux 配置示例：
+
+```bash
+# 1. 把密钥写到家目录的纯文本文件（路径自选，务必放在 Git 仓库之外）
+echo -n "你的GLM密钥" > ~/.rehoyo/glm-api-key
+chmod 600 ~/.rehoyo/glm-api-key
+
+# 2. 在 Rehoyo/ 项目根目录创建被 Git 忽略的 .rehoyo-live.json
+#    注意：JSON 不展开 ~，keyFile 必须使用绝对路径
+cat > .rehoyo-live.json <<EOF
+{
+  "keyFile": "$HOME/.rehoyo/glm-api-key",
+  "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+  "model": "glm-5.2"
+}
+EOF
+
+# 3. 直接 npm run dev，Electron 会自动读取 .rehoyo-live.json
+npm run dev
+```
+
+不想创建配置文件，也可以仅用环境变量一次性启动：
+
+```bash
+REHOYO_GLM_API_KEY_FILE="$HOME/.rehoyo/glm-api-key" \
+REHOYO_GLM_BASE_URL="https://open.bigmodel.cn/api/coding/paas/v4" \
+REHOYO_GLM_MODEL="glm-5.2" \
+npm run dev
+```
+
 - 密钥文件只在 Electron 主进程发起请求时读取，不会进入渲染器、`localStorage`、日志或 Git。
 - 模型调用固定使用 `https://open.bigmodel.cn/api/coding/paas/v4`；公开检索使用同一密钥访问独立的 `/api/paas/v4/web_search` 工具接口。
 - 也可以创建被 Git 忽略的 `.rehoyo-live.json`：
