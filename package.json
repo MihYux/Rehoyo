@@ -1,6 +1,6 @@
 {
   "name": "rehoyo-global-player-intelligence",
-  "description": "ReHoYo Electron desktop command center for deterministic global player insight demos.",
+  "description": "ReHoYo Electron command center for grounded public-web game research agents and deterministic demos.",
   "author": "ReHoYo",
   "private": true,
   "version": "0.1.0",

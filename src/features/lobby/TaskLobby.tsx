@@ -139,7 +139,7 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                 disabled={!researchStatus?.configured}
               >
                 <Broadcast size={17} />
-                <span><strong>真实公开网络研究</strong><small>{researchStatus?.configured ? `${researchStatus.model.toUpperCase()} · Web Search + RSS` : '需要桌面端 GLM 配置'}</small></span>
+                <span><strong>真实公开网络研究</strong><small>{researchStatus?.configured ? `${researchStatus.model.toUpperCase()} · ${researchStatus.retrieval}` : '需要桌面端 GLM 配置'}</small></span>
               </button>
               <button
                 type="button"

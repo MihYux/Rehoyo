@@ -23,7 +23,7 @@ describe('TaskLobby', () => {
       isElectron: true,
       platform: 'win32',
       research: {
-        getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'BigModel Web Search + public RSS', searchEndpoint: 'open.bigmodel.cn' })),
+        getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'BigModel Web Search + Reddit RSS + Niconico Snapshot', searchEndpoint: 'open.bigmodel.cn' })),
         run: vi.fn(),
         onEvent: vi.fn(() => () => {}),
       },
@@ -32,6 +32,7 @@ describe('TaskLobby', () => {
     render(<TaskLobby recentTasks={[]} onStart={onStart} onOpenReport={vi.fn()} />)
 
     expect(await screen.findByText('真实公开网络研究')).toBeInTheDocument()
+    expect(screen.getByText(/Niconico Snapshot/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '启动真实研究' }))
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ game: expect.objectContaining({ name: '原神' }) }), 'live')

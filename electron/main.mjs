@@ -49,7 +49,7 @@ const activeResearchRuns = new Set()
 ipcMain.handle('rehoyo:research:status', () => ({
   configured: glmConfig.configured,
   model: glmConfig.model,
-  retrieval: 'BigModel Web Search + public RSS',
+  retrieval: 'BigModel Web Search + Reddit RSS + Niconico Snapshot',
   searchEndpoint: new URL(glmConfig.searchBaseUrl).hostname,
 }))
 
