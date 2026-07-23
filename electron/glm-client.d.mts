@@ -48,3 +48,13 @@ export function requestGlmAdvisor(options: {
   getApiKey?: () => Promise<string>
   readKeyFile?: (path: string) => Promise<string>
 }): Promise<{ content: string; model: string; requestId: string }>
+
+export function streamGlmAdvisor(options: {
+  config: GlmRuntimeConfig
+  request: GlmAdvisorRequest
+  fetchImpl?: typeof fetch
+  getApiKey?: () => Promise<string>
+  readKeyFile?: (path: string) => Promise<string>
+  signal?: AbortSignal
+  onEvent?: (event: { type: 'delta'; content: string }) => void | Promise<void>
+}): Promise<{ content: string; model: string; requestId: string }>

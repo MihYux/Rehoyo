@@ -5,7 +5,41 @@ import {
   readGlmLaunchEnvironment,
   requestGlmAdvisor,
   sanitizeGlmAdvisorRequest,
+  streamGlmAdvisor,
 } from '../../electron/glm-client.mjs'
+
+const liveConfig = {
+  baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  searchBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+  keyFile: '',
+  model: 'glm-5.2',
+  configured: true,
+}
+
+const groundedRequest = {
+  question: '不同地区的真实证据有什么差异？',
+  localAnswer: '只使用当前引用证据。',
+  dataMode: 'live' as const,
+  evidence: [{
+    id: 'evidence-1',
+    source: 'Reddit',
+    region: 'WEST',
+    excerptZh: '公开页面中的真实观点。',
+    sentiment: 'neutral',
+    topics: ['story'],
+    title: 'Public discussion',
+    url: 'https://www.reddit.com/r/example/comments/grounded',
+  }],
+}
+
+function readableFromBytes(chunks: Uint8Array[]) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      chunks.forEach((chunk) => controller.enqueue(chunk))
+      controller.close()
+    },
+  })
+}
 
 describe('GLM desktop advisor client', () => {
   it('keeps the key path private and rejects non-BigModel endpoints', () => {
@@ -157,6 +191,92 @@ describe('GLM desktop advisor client', () => {
     expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
       Authorization: 'Bearer provider-test-key',
     })
+  })
+
+  it('streams GLM SSE deltas across frame and UTF-8 chunk boundaries', async () => {
+    const encoder = new TextEncoder()
+    const payload = [
+      'data: {"id":"stream-request","model":"glm-5.2","choices":[{"delta":{"content":"## 地区结论\\n\\n"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"- 中国：强度"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ].join('')
+    const bytes = encoder.encode(payload)
+    const firstChineseByte = bytes.findIndex((byte) => byte > 127)
+    const chunks = [
+      bytes.slice(0, 17),
+      bytes.slice(17, firstChineseByte + 1),
+      bytes.slice(firstChineseByte + 1, firstChineseByte + 2),
+      bytes.slice(firstChineseByte + 2, 119),
+      bytes.slice(119),
+    ]
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(readableFromBytes(chunks), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    const deltas: string[] = []
+
+    const result = await streamGlmAdvisor({
+      config: liveConfig,
+      request: groundedRequest,
+      fetchImpl,
+      getApiKey: async () => 'provider-test-key',
+      onEvent: (event) => deltas.push(event.content),
+    })
+
+    expect(deltas).toEqual(['## 地区结论\n\n', '- 中国：强度'])
+    expect(result).toEqual({
+      content: '## 地区结论\n\n- 中国：强度',
+      model: 'glm-5.2',
+      requestId: 'stream-request',
+    })
+    const [, init] = fetchImpl.mock.calls[0]
+    expect(init?.headers).toMatchObject({ Accept: 'text/event-stream' })
+    expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true, thinking: { type: 'disabled' } })
+  })
+
+  it('rejects malformed or empty GLM streams instead of inventing an answer', async () => {
+    const malformedFetch = vi.fn(async () => new Response('data: {not-json}\n\ndata: [DONE]\n\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    await expect(streamGlmAdvisor({
+      config: liveConfig,
+      request: groundedRequest,
+      fetchImpl: malformedFetch,
+      getApiKey: async () => 'provider-test-key',
+      onEvent: vi.fn(),
+    })).rejects.toThrow(/invalid SSE/i)
+
+    const emptyFetch = vi.fn(async () => new Response('data: {"choices":[{"delta":{"content":""}}]}\n\ndata: [DONE]\n\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    await expect(streamGlmAdvisor({
+      config: liveConfig,
+      request: groundedRequest,
+      fetchImpl: emptyFetch,
+      getApiKey: async () => 'provider-test-key',
+      onEvent: vi.fn(),
+    })).rejects.toThrow(/empty advisor response/i)
+  })
+
+  it('passes caller cancellation to the GLM fetch', async () => {
+    const controller = new AbortController()
+    controller.abort(new DOMException('Stopped by user', 'AbortError'))
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) throw init.signal.reason
+      return new Response()
+    })
+
+    await expect(streamGlmAdvisor({
+      config: liveConfig,
+      request: groundedRequest,
+      fetchImpl,
+      getApiKey: async () => 'provider-test-key',
+      signal: controller.signal,
+      onEvent: vi.fn(),
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchImpl.mock.calls[0][1]?.signal?.aborted).toBe(true)
   })
 
   it('bounds and sanitizes renderer-supplied advisor context', () => {

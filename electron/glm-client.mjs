@@ -124,6 +124,122 @@ function buildMessages(request) {
   ]
 }
 
+function createAdvisorRequestBody(config, safeRequest, stream) {
+  return JSON.stringify({
+    model: config.model,
+    messages: buildMessages(safeRequest),
+    thinking: { type: 'disabled' },
+    temperature: 0.2,
+    max_tokens: 1200,
+    stream,
+  })
+}
+
+async function getResponseError(response) {
+  const body = await response.text()
+  try {
+    const payload = JSON.parse(body)
+    return String(payload?.error?.message || `HTTP ${response.status}`).slice(0, 240)
+  } catch {
+    return String(body || `HTTP ${response.status}`).slice(0, 240)
+  }
+}
+
+async function consumeSse(body, onPayload, signal) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let reachedDone = false
+
+  const consumeFrame = async (frame) => {
+    for (const line of frame.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (payload === '[DONE]') {
+        reachedDone = true
+        return
+      }
+      if (payload) await onPayload(payload)
+    }
+  }
+
+  try {
+    while (!reachedDone) {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        await consumeFrame(frame)
+        if (reachedDone) break
+      }
+      if (done) break
+    }
+
+    if (!reachedDone && buffer.trim()) await consumeFrame(buffer)
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+export async function streamGlmAdvisor({
+  config,
+  request,
+  fetchImpl = fetch,
+  getApiKey,
+  readKeyFile = (keyFile) => readFile(keyFile, 'utf8'),
+  signal,
+  onEvent = () => {},
+}) {
+  if (!config.configured) throw new Error('GLM advisor is not configured.')
+
+  const safeRequest = sanitizeGlmAdvisorRequest(request)
+  const apiKey = String(getApiKey ? await getApiKey() : await readKeyFile(config.keyFile)).trim()
+  if (!apiKey) throw new Error('GLM API key is empty.')
+
+  const timeoutSignal = AbortSignal.timeout(60_000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+  const response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: createAdvisorRequestBody(config, safeRequest, true),
+    signal: requestSignal,
+  })
+
+  if (!response.ok) {
+    throw new Error(`GLM request failed: ${await getResponseError(response)}`)
+  }
+  if (!response.body) throw new Error('GLM returned an unreadable advisor stream.')
+
+  let content = ''
+  let model = config.model
+  let requestId = ''
+  await consumeSse(response.body, async (data) => {
+    let payload
+    try {
+      payload = JSON.parse(data)
+    } catch {
+      throw new Error('Invalid SSE payload from GLM.')
+    }
+
+    if (payload?.id) requestId = String(payload.id)
+    if (payload?.model) model = String(payload.model)
+    const delta = payload?.choices?.[0]?.delta?.content
+    if (typeof delta === 'string' && delta) {
+      content += delta
+      await onEvent({ type: 'delta', content: delta })
+    }
+  }, requestSignal)
+
+  if (!content.trim()) throw new Error('GLM returned an empty advisor response.')
+  return { content: content.trim(), model, requestId }
+}
+
 export async function requestGlmAdvisor({
   config,
   request,
@@ -143,14 +259,7 @@ export async function requestGlmAdvisor({
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: config.model,
-      messages: buildMessages(safeRequest),
-      thinking: { type: 'disabled' },
-      temperature: 0.2,
-      max_tokens: 1200,
-      stream: false,
-    }),
+    body: createAdvisorRequestBody(config, safeRequest, false),
     signal: AbortSignal.timeout(60_000),
   })
 
