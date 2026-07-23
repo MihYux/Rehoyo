@@ -12,6 +12,7 @@ import { startTask } from './domain/engine'
 import { isCompletedGroundedTask } from './domain/grounding'
 import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
+import { ConnectionGate } from './features/connection/ConnectionGate'
 import { TaskLobby } from './features/lobby/TaskLobby'
 import type { ReportTab } from './features/report/ReportDashboard'
 
@@ -182,8 +183,10 @@ export function AppRoutes() {
 
 export default function App() {
   return (
-    <HashRouter>
-      <AppRoutes />
-    </HashRouter>
+    <ConnectionGate>
+      <HashRouter>
+        <AppRoutes />
+      </HashRouter>
+    </ConnectionGate>
   )
 }

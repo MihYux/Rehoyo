@@ -1330,6 +1330,169 @@ body { overflow-x: hidden; }
 .evidence-chain-summary p,
 .advisor-evidence-list blockquote { font-size: 10px; }
 
+/* Secure first-run connection: one task, two fields, one action. */
+.connection-gate {
+  position: fixed;
+  z-index: 500;
+  inset: 0;
+  display: grid;
+  min-width: 1280px;
+  min-height: 720px;
+  place-items: center;
+  padding: 48px;
+  color: #182230;
+  background: #f5f8fa;
+  animation: connection-fade-in 150ms ease-out both;
+}
+
+.connection-card {
+  width: min(560px, calc(100vw - 96px));
+  padding: 42px;
+  border: 1px solid #d8e2e8;
+  border-top: 4px solid #1687a1;
+  background: #ffffff;
+}
+
+.connection-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e2e8ed;
+}
+
+.connection-brand img {
+  display: block;
+  width: 118px;
+  height: 38px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.connection-brand span,
+.connection-eyebrow {
+  color: #52677a;
+  font: 600 11px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.12em;
+}
+
+.connection-copy { padding: 30px 0 24px; }
+.connection-eyebrow { margin: 0 0 10px; color: #0d7188; }
+.connection-copy h1,
+.connection-card--error h1 {
+  margin: 0;
+  color: #182230;
+  font: 600 34px/1.2 'Noto Sans SC', sans-serif;
+}
+
+.connection-copy > p:last-child,
+.connection-card--error > p:last-child {
+  margin: 13px 0 0;
+  color: #526173;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.connection-form { display: grid; gap: 10px; }
+.connection-form label {
+  margin-top: 7px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.connection-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  min-height: 54px;
+  padding: 0 15px;
+  border: 1px solid #cbd7df;
+  background: #ffffff;
+}
+
+.connection-input:focus-within { border-color: #1687a1; }
+.connection-input svg { color: #698092; }
+.connection-input input {
+  width: 100%;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #182230;
+  background: transparent;
+  font: 500 15px 'IBM Plex Mono', monospace;
+}
+
+.connection-input input::placeholder { color: #98a6b3; }
+.connection-error { margin: 4px 0 0; color: #b4233d; font-size: 13px; line-height: 1.5; }
+.connection-form > button {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 11px;
+  padding: 0 18px;
+  border: 1px solid #0f7188;
+  color: #ffffff;
+  background: #137f9a;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.connection-form > button:hover { background: #0f7087; }
+.connection-form > button:disabled { opacity: 0.55; }
+.connection-privacy {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8ed;
+  color: #3c7d70;
+}
+
+.connection-privacy p { display: grid; gap: 3px; margin: 0; }
+.connection-privacy strong { color: #294b44; font-size: 13px; }
+.connection-privacy span { color: #687787; font-size: 12px; line-height: 1.55; }
+.connection-card--error { text-align: center; }
+.connection-card--error .connection-eyebrow { margin-top: 20px; }
+.connection-icon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  place-items: center;
+  color: #b4233d;
+  border: 1px solid #e9b8c0;
+  background: #fff5f6;
+}
+
+.connection-gate--checking { gap: 16px; align-content: center; color: #526173; font-size: 14px; }
+.connection-gate--checking img { width: 150px; height: 52px; object-fit: contain; }
+.connection-session-notice {
+  position: fixed;
+  z-index: 490;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  max-width: 420px;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 16px;
+  color: #5b471a;
+  border: 1px solid #dec98e;
+  background: #fffaf0;
+  font-size: 13px;
+  animation: connection-fade-in 150ms ease-out both;
+}
+
+@keyframes connection-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 1279px) {
   .lobby-page, .app-desktop { display: none !important; }
   .desktop-warning { display: grid; }

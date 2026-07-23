@@ -24,6 +24,11 @@ describe('App routes', () => {
     window.rehoyoDesktop = {
       isElectron: true,
       platform: 'win32',
+      connection: {
+        getStatus: vi.fn(async () => ({ configured: true, provider: 'bigmodel' as const, endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4', endpointHost: 'open.bigmodel.cn', model: 'glm-5.2', persistence: 'encrypted' as const })),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
       research: {
         getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'verified test retrieval', searchEndpoint: 'open.bigmodel.cn' })),
         run: vi.fn(() => new Promise<never>(() => undefined)),
@@ -96,7 +101,7 @@ describe('App routes', () => {
     window.location.hash = '#/'
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Agent 团队' }))
+    await user.click(await screen.findByRole('button', { name: 'Agent 团队' }))
 
     expect(window.location.hash).toBe('#/')
   })
