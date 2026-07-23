@@ -11,7 +11,7 @@
 
 > **概念演示 · 非官方产品**
 >
-> 当前版本是 Electron 桌面端高保真 Demo。所有评论、数量、事件与洞察均为确定性模拟数据快照；应用不会访问实时互联网，也不代表任何游戏或平台的真实结论。
+> 当前版本是 Electron 桌面端高保真 Demo。所有评论、数量、事件与洞察均为确定性模拟数据快照；应用不会采集实时社区，也不代表任何游戏或平台的真实结论。可选的 GLM 顾问集成只会基于当前本地快照生成回答。
 
 ## 产品概览
 
@@ -62,7 +62,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` 会启动本地渲染服务并自动打开 **ReHoYo Electron 桌面窗口**。Vite 不会打开浏览器，也不应把终端中的本地渲染地址作为产品入口。应用不需要 API Key、后端服务或外部账号。
+`npm run dev` 会启动本地渲染服务并自动打开 **ReHoYo Electron 桌面窗口**。Vite 不会打开浏览器，也不应把终端中的本地渲染地址作为产品入口。确定性演示流程不需要 API Key、后端服务或外部账号。
 
 常用命令：
 
@@ -78,12 +78,31 @@ npm run check      # 单元测试与生产构建
 
 `npm run dev:renderer` 仅用于渲染层隔离开发和自动化测试；它不会自动打开浏览器，也不是日常产品启动方式。
 
+## 可选 GLM 实时顾问
+
+桌面端可以把顾问回答接入智谱 BigModel Coding API。任务、证据、图表和报告仍然来自确定性演示快照；只有完成任务后的顾问回答会发送“用户问题 + 已匹配的本地证据”，界面会显示 `GLM-5.2 · LIVE`。模型不可用时会保留本地证据答案并明确显示回退状态。
+
+PowerShell 配置示例：
+
+```powershell
+$env:REHOYO_GLM_API_KEY_FILE = "C:\secure\glm-api-key.txt"
+$env:REHOYO_GLM_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
+$env:REHOYO_GLM_MODEL = "glm-5.2"
+npm run dev
+```
+
+- 密钥文件只在 Electron 主进程发起请求时读取，不会进入渲染器、`localStorage`、日志或 Git。
+- API 地址使用固定允许列表，仅接受 `https://open.bigmodel.cn/api/coding/paas/v4`。
+- 也可以通过被 Git 忽略的 `.rehoyo-live.json` 保存 `keyFile`、`baseUrl` 与 `model`，再使用 `electron . --rehoyo-glm-config=.rehoyo-live.json` 启动本地构建。
+- Coding API 面向开发集成测试；不要把当前演示快照描述为实时市场采集。参见[智谱 Coding API 快速开始](https://docs.bigmodel.cn/cn/coding-plan/quick-start)。
+
 ## 桌面安全边界
 
 - 渲染层启用 `contextIsolation`、Chromium sandbox 与 Web Security。
 - 禁止渲染层直接访问 Node.js。
 - 新窗口与外部导航默认拒绝，不会从应用中拉起浏览器。
-- 预加载层只暴露只读的运行平台信息。
+- 预加载层只暴露只读运行状态与受限的顾问请求桥接，不暴露密钥或文件路径。
+- 顾问请求在主进程校验长度、字段和证据数量，并设置超时；渲染器不能覆盖模型端点或认证信息。
 - 正式运行通过 `file://` 加载本机构建产物；开发模式仅连接 `127.0.0.1`。
 
 ## 测试
@@ -125,6 +144,7 @@ Electron 正式环境使用 Hash Router，使本地 `file://` 加载与刷新保
 electron/
 ├── main.mjs              Electron 生命周期、窗口与导航策略
 ├── preload.cjs           最小化、只读的安全桥接
+├── glm-client.mjs        GLM 配置校验、请求净化与主进程客户端
 └── config.mjs            可测试的桌面窗口安全配置
 
 src/
@@ -158,4 +178,4 @@ tests/
 
 ## 当前范围
 
-当前 Demo 不包含真实爬虫、模型 API、登录权限、多人协作、移动端适配、PDF 导出或官方游戏素材。领域层与界面层已经分离，未来可通过替换数据和任务适配层接入后端服务，而无需重做主要产品流程。
+当前 Demo 不包含真实爬虫、实时社区数据、登录权限、多人协作、移动端适配、PDF 导出或官方游戏素材。它只为报告型顾问提供可选 GLM 模型接入，分析任务本身仍完全使用确定性模拟数据。领域层与界面层已经分离，未来可通过替换数据和任务适配层接入后端服务，而无需重做主要产品流程。

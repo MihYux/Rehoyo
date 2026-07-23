@@ -10,8 +10,9 @@ import {
   Sparkle,
 } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { BrandMark } from '../../components/BrandMark'
+import { getLiveAdvisorClient, type LiveAdvisorClient, type LiveAdvisorStatus } from '../../desktop/bridge'
 import { getAdvisorResponse, type GroundedAdvisorResponse } from '../../domain/advisor'
 import type { AnalysisPreset } from '../../domain/types'
 import type { ReportTab } from '../report/ReportDashboard'
@@ -20,33 +21,108 @@ interface AdvisorWorkspaceProps {
   preset: AnalysisPreset
   onBackToReport: () => void
   onOpenEvidence: (evidenceId: string, tab: ReportTab) => void
+  liveAdvisor?: LiveAdvisorClient
 }
 
 interface ConversationTurn extends GroundedAdvisorResponse {
   id: string
   question: string
+  answerMode: 'live' | 'local'
+  model?: string
+  liveError?: string
 }
 
-export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: AdvisorWorkspaceProps) {
+export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveAdvisor }: AdvisorWorkspaceProps) {
   const [input, setInput] = useState('')
   const [turns, setTurns] = useState<ConversationTurn[]>([])
+  const [isAsking, setIsAsking] = useState(false)
+  const [liveStatus, setLiveStatus] = useState<LiveAdvisorStatus>()
+  const advisorClient = useMemo(() => liveAdvisor ?? getLiveAdvisorClient(), [liveAdvisor])
   const activeTurn = turns.at(-1)
   const activeEvidence = useMemo(
     () => preset.evidence.filter((item) => activeTurn?.evidenceIds.includes(item.id)),
     [activeTurn, preset.evidence],
   )
 
-  const ask = (question: string) => {
+  useEffect(() => {
+    let active = true
+    if (!advisorClient) return undefined
+
+    void advisorClient.getStatus()
+      .then((status) => {
+        if (active) setLiveStatus(status)
+      })
+      .catch(() => {
+        if (active) setLiveStatus({ configured: false, endpoint: '', model: '' })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [advisorClient])
+
+  const appendLocalTurn = (question: string, response: GroundedAdvisorResponse, liveError?: string) => {
+    setTurns((current) => [...current, {
+      ...response,
+      id: `turn-${current.length + 1}`,
+      question,
+      answerMode: 'local',
+      liveError,
+    }])
+  }
+
+  const ask = async (question: string) => {
     const trimmed = question.trim()
-    if (!trimmed) return
+    if (!trimmed || isAsking) return
     const response = getAdvisorResponse(preset, trimmed)
-    setTurns((current) => [...current, { ...response, id: `turn-${current.length + 1}`, question: trimmed }])
     setInput('')
+
+    if (!advisorClient || !liveStatus?.configured) {
+      appendLocalTurn(trimmed, response)
+      return
+    }
+
+    setIsAsking(true)
+    try {
+      const evidence = preset.evidence
+        .filter((item) => response.evidenceIds.includes(item.id))
+        .map((item) => ({
+          id: item.id,
+          source: item.source,
+          region: item.region,
+          excerptZh: item.excerptZh,
+          sentiment: item.sentiment,
+          topics: item.topics,
+        }))
+      const result = await advisorClient.ask({
+        question: trimmed,
+        localAnswer: response.answer,
+        evidence,
+      })
+
+      if (!result.ok) {
+        appendLocalTurn(trimmed, response, result.error)
+        return
+      }
+
+      setTurns((current) => [...current, {
+        ...response,
+        answer: result.content,
+        id: `turn-${current.length + 1}`,
+        question: trimmed,
+        answerMode: 'live',
+        model: result.model,
+      }])
+    } catch {
+      appendLocalTurn(trimmed, response, '实时模型请求失败')
+    } finally {
+      setIsAsking(false)
+    }
   }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    ask(input)
+    void ask(input)
   }
 
   return (
@@ -71,7 +147,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
             <span>SUGGESTED QUESTIONS</span>
             <div className="suggested-questions">
               {preset.advisorAnswers.map((item, index) => (
-                <button type="button" key={item.id} aria-label={item.question} onClick={() => ask(item.question)}>
+                <button type="button" key={item.id} aria-label={item.question} disabled={isAsking} onClick={() => void ask(item.question)}>
                   <i>{String(index + 1).padStart(2, '0')}</i><span>{item.question}</span><ArrowRight size={13} />
                 </button>
               ))}
@@ -83,7 +159,9 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
         <section className="advisor-chat">
           <div className="advisor-chat__head">
             <div><ChatCircleText size={17} /><span>ADVISOR SESSION</span></div>
-            <small>报告完成后解锁 · 演示数据快照</small>
+            <small className={liveStatus?.configured ? 'is-live' : ''}>
+              {liveStatus?.configured ? `${liveStatus.model.toLocaleUpperCase()} 实时连接` : '本地证据模式 · 演示数据快照'}
+            </small>
           </div>
           <div className="conversation-stream" aria-live="polite">
             <div className="advisor-welcome">
@@ -94,8 +172,14 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
               <motion.div className="conversation-turn" key={turn.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="user-question"><span>YOU</span><p>{turn.question}</p></div>
                 <div className="advisor-answer">
-                  <header><Brain size={15} weight="duotone" /><span>REHOYO ADVISOR</span>{turn.isFallback && <small>证据不足</small>}</header>
+                  <header>
+                    <Brain size={15} weight="duotone" />
+                    <span>REHOYO ADVISOR</span>
+                    {turn.isFallback && <small>证据不足</small>}
+                    <small className={turn.answerMode === 'live' ? 'is-live' : ''}>{turn.answerMode === 'live' ? `${turn.model?.toLocaleUpperCase()} · LIVE` : 'LOCAL SNAPSHOT'}</small>
+                  </header>
                   <p>{turn.answer}</p>
+                  {turn.liveError && <div className="advisor-live-error">实时模型不可用，已回退本地证据：{turn.liveError}</div>}
                   {!!turn.evidenceIds.length && (
                     <footer>
                       <span><Database size={12} /> 引用证据</span>
@@ -105,11 +189,12 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence }: Adv
                 </div>
               </motion.div>
             ))}
+            {isAsking && <div className="advisor-pending"><Brain size={15} weight="duotone" /><span>GLM 正在综合当前证据链…</span></div>}
           </div>
           <form className="advisor-composer" onSubmit={submit}>
             <MagnifyingGlass size={18} />
-            <input aria-label="向 AI 游戏顾问提问" value={input} onChange={(event) => setInput(event.target.value)} placeholder="询问地区差异、版本风险或下一步策略…" />
-            <button type="submit" disabled={!input.trim()}><span>发送问题</span><PaperPlaneTilt size={16} weight="fill" /></button>
+            <input aria-label="向 AI 游戏顾问提问" value={input} disabled={isAsking} onChange={(event) => setInput(event.target.value)} placeholder="询问地区差异、版本风险或下一步策略…" />
+            <button type="submit" disabled={!input.trim() || isAsking}><span>{isAsking ? '分析中' : '发送问题'}</span><PaperPlaneTilt size={16} weight="fill" /></button>
           </form>
           <p className="advisor-composer-note">AI 回答仅基于当前演示数据快照，不代表实时市场研究结论。</p>
         </section>

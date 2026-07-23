@@ -7,3 +7,4 @@ release/
 coverage/
 *.tsbuildinfo
 *.log
+.rehoyo-live.json

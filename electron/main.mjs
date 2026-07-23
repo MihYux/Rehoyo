@@ -1,7 +1,14 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createWindowOptions, isAllowedNavigation } from './config.mjs'
+import {
+  createGlmRuntimeConfig,
+  getPublicGlmStatus,
+  readGlmLaunchEnvironment,
+  requestGlmAdvisor,
+  sanitizeGlmAdvisorRequest,
+} from './glm-client.mjs'
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(electronDirectory, '..')
@@ -11,7 +18,30 @@ const rendererFile = path.join(appRoot, 'dist', 'index.html')
 const developmentUrl = process.env.VITE_DEV_SERVER_URL
 const rendererUrl = developmentUrl || pathToFileURL(rendererFile).href
 
+let glmConfig
+try {
+  glmConfig = createGlmRuntimeConfig({
+    ...readGlmLaunchEnvironment(process.argv),
+    ...process.env,
+  })
+} catch (error) {
+  console.error('GLM configuration disabled:', error instanceof Error ? error.message : 'invalid configuration')
+  glmConfig = createGlmRuntimeConfig({}, () => false)
+}
+
 let mainWindow = null
+
+ipcMain.handle('rehoyo:advisor:status', () => getPublicGlmStatus(glmConfig))
+ipcMain.handle('rehoyo:advisor:ask', async (_event, input) => {
+  try {
+    const request = sanitizeGlmAdvisorRequest(input)
+    const response = await requestGlmAdvisor({ config: glmConfig, request })
+    return { ok: true, ...response }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'GLM request failed.'
+    return { ok: false, error: message.slice(0, 240) }
+  }
+})
 
 async function createMainWindow() {
   const window = new BrowserWindow(createWindowOptions(preloadPath, iconPath))

@@ -18,9 +18,22 @@ test('launches ReHoYo in a secured Electron window', async () => {
     await expect(page.getByRole('img', { name: 'ReHoYo' })).toBeVisible()
 
     const desktopBridge = await page.evaluate(() => (
-      globalThis as typeof globalThis & { rehoyoDesktop?: { isElectron: boolean; platform: string } }
+      globalThis as typeof globalThis & {
+        rehoyoDesktop?: {
+          isElectron: boolean
+          platform: string
+          advisor?: { getStatus: () => Promise<{ configured: boolean; endpoint: string; model: string }> }
+        }
+      }
     ).rehoyoDesktop)
     expect(desktopBridge).toMatchObject({ isElectron: true, platform: 'win32' })
+
+    const advisorStatus = await page.evaluate(() => (
+      globalThis as typeof globalThis & {
+        rehoyoDesktop?: { advisor?: { getStatus: () => Promise<unknown> } }
+      }
+    ).rehoyoDesktop?.advisor?.getStatus())
+    expect(advisorStatus).toEqual({ configured: false, endpoint: 'open.bigmodel.cn', model: 'glm-5.2' })
 
     const opened = await page.evaluate(() => globalThis.open('https://example.com'))
     expect(opened).toBeNull()
