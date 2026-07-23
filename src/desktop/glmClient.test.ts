@@ -113,6 +113,52 @@ describe('GLM desktop advisor client', () => {
     expect(body.messages.at(-1).content).toContain('https://www.reddit.com/r/example/comments/real')
   })
 
+  it('prefers an injected API key provider without reading a key file', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      id: 'provider-request',
+      model: 'glm-5.2',
+      choices: [{ message: { content: 'Grounded provider response [evidence-1]' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const readKeyFile = vi.fn(async () => {
+      throw new Error('key-file fallback must not be used')
+    })
+    const getApiKey = vi.fn(async () => 'provider-test-key')
+
+    await requestGlmAdvisor({
+      config: {
+        baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        searchBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        keyFile: '',
+        model: 'glm-5.2',
+        configured: true,
+      },
+      request: {
+        question: 'What differs across regions?',
+        localAnswer: 'Only the cited evidence is available.',
+        dataMode: 'live',
+        evidence: [{
+          id: 'evidence-1',
+          source: 'Reddit',
+          region: 'WEST',
+          excerptZh: 'A grounded public-page excerpt.',
+          sentiment: 'neutral',
+          topics: ['story'],
+          title: 'Public discussion',
+          url: 'https://www.reddit.com/r/example/comments/grounded',
+        }],
+      },
+      fetchImpl,
+      getApiKey,
+      readKeyFile,
+    })
+
+    expect(getApiKey).toHaveBeenCalledOnce()
+    expect(readKeyFile).not.toHaveBeenCalled()
+    expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: 'Bearer provider-test-key',
+    })
+  })
+
   it('bounds and sanitizes renderer-supplied advisor context', () => {
     const request = sanitizeGlmAdvisorRequest({
       question: '  为什么欧美玩家评价不同？  ',

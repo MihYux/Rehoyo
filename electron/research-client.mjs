@@ -653,13 +653,14 @@ export async function runLiveResearch({
   request,
   onEvent = () => {},
   fetchImpl = fetch,
+  getApiKey,
   readKeyFile = (keyFile) => readFile(keyFile, 'utf8'),
   now = Date.now,
 }) {
   if (!config?.configured) throw new Error('Real research requires a configured GLM key file.')
   const safeRequest = sanitizeResearchRequest(request)
-  const apiKey = String(await readKeyFile(config.keyFile)).trim()
-  if (!apiKey) throw new Error('GLM API key file is empty.')
+  const apiKey = String(getApiKey ? await getApiKey() : await readKeyFile(config.keyFile)).trim()
+  if (!apiKey) throw new Error('GLM API key is empty.')
   const startedAt = now()
   const events = []
   const emit = (agentId, phase, kind, message, progress, evidenceIds = [], extras = {}) => {

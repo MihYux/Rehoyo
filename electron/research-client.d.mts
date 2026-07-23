@@ -69,6 +69,7 @@ export function runLiveResearch(options: {
   request: LiveResearchRequest
   onEvent?: (event: AnalysisEvent) => void
   fetchImpl?: typeof fetch
+  getApiKey?: () => Promise<string>
   readKeyFile?: (path: string) => Promise<string>
   now?: () => number
 }): Promise<AnalysisPreset>

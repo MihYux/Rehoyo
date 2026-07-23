@@ -254,7 +254,7 @@ describe('live research agent orchestration', () => {
       },
       request: { gameName: '原神', versionLabel: '5.0', versionTitle: '荣花与炎日之途', regions: ['CN', 'JP', 'WEST'] },
       fetchImpl,
-      readKeyFile: vi.fn(async () => 'private-test-key'),
+      getApiKey: vi.fn(async () => 'private-test-key'),
       now: (() => { let value = 1_000; return () => (value += 250) })(),
       onEvent: (event) => events.push(event),
     })

@@ -45,5 +45,6 @@ export function requestGlmAdvisor(options: {
   config: GlmRuntimeConfig
   request: GlmAdvisorRequest
   fetchImpl?: typeof fetch
+  getApiKey?: () => Promise<string>
   readKeyFile?: (path: string) => Promise<string>
 }): Promise<{ content: string; model: string; requestId: string }>

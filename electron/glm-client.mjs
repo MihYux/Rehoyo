@@ -128,13 +128,14 @@ export async function requestGlmAdvisor({
   config,
   request,
   fetchImpl = fetch,
+  getApiKey,
   readKeyFile = (keyFile) => readFile(keyFile, 'utf8'),
 }) {
   if (!config.configured) throw new Error('GLM advisor is not configured.')
 
   const safeRequest = sanitizeGlmAdvisorRequest(request)
-  const apiKey = String(await readKeyFile(config.keyFile)).trim()
-  if (!apiKey) throw new Error('GLM API key file is empty.')
+  const apiKey = String(getApiKey ? await getApiKey() : await readKeyFile(config.keyFile)).trim()
+  if (!apiKey) throw new Error('GLM API key is empty.')
 
   const response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
