@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LiveResearchEventPayload } from '../../desktop/bridge'
@@ -36,10 +36,13 @@ describe('TaskWorkspace', () => {
 
     render(<TaskWorkspace preset={preset} initialTask={startTask(preset, 1_000)} onComplete={vi.fn()} />)
 
-    expect(screen.getByRole('heading', { name: 'Agent 协作空间' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '全球地区声音与 Agent 协作' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '此刻，各地区在讨论什么' })).toBeInTheDocument()
     expect(screen.getAllByLabelText(/Agent 迷你浏览器/)).toHaveLength(4)
     expect((await screen.findAllByText(evidence.url)).length).toBeGreaterThan(0)
     expect(screen.getAllByText('真实网页').length).toBeGreaterThan(0)
+    expect(within(screen.getByTestId('regional-voice-CN')).getByText('探索体验')).toBeInTheDocument()
+    expect(within(screen.getByTestId('regional-voice-JP')).getByText('等待日本真实证据')).toBeInTheDocument()
     expect(screen.queryByText('演示快照')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /社区研究 Agent/ }))

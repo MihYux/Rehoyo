@@ -94,7 +94,15 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
   await page.screenshot({ path: testInfo.outputPath('01-lobby.png'), fullPage: true })
 
   await page.getByRole('button', { name: /启动真实研究/ }).click()
-  await expect(page.getByRole('heading', { name: 'Agent 协作空间' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全球地区声音与 Agent 协作' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '此刻，各地区在讨论什么' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '中国旗帜' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '日本旗帜' })).toBeVisible()
+  await expect(page.getByRole('img', { name: '欧美地区旗帜：美国与欧盟' })).toBeVisible()
+  await expect(page.getByText('中国：探索体验')).toBeVisible()
+  await expect(page.getByText('日本：角色表现')).toBeVisible()
+  await expect(page.getByText('欧美：剧情节奏')).toBeVisible()
+  await expect(page.getByText('三地证据已到达')).toBeVisible()
   const browserCards = page.getByRole('button', { name: /Agent 迷你浏览器/ })
   await expect(browserCards).toHaveCount(4)
   const browserCardBoxes = await browserCards.evaluateAll((cards) => cards.map((card) => {
@@ -110,6 +118,11 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
       expect(overlaps).toBe(false)
     }
   }
+  const regionalPulseBox = await page.getByRole('region', { name: '实时地区声音对比' }).boundingBox()
+  expect(regionalPulseBox).not.toBeNull()
+  expect(regionalPulseBox!.y + regionalPulseBox!.height).toBeLessThanOrEqual(
+    Math.min(...browserCardBoxes.map((box) => box.y)),
+  )
   await page.getByRole('button', { name: /地区差异 Agent/ }).click()
   await expect(page.getByRole('heading', { name: 'Agent 任务检查器' })).toBeVisible()
   await expect(page.getByText('任务目标', { exact: true })).toBeVisible()

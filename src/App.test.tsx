@@ -67,7 +67,7 @@ describe('App routes', () => {
 
     await user.click(await screen.findByRole('button', { name: '启动真实研究' }))
 
-    expect(await screen.findByRole('heading', { name: 'Agent 协作空间' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '全球地区声音与 Agent 协作' })).toBeInTheDocument()
   })
 
   it('restores a completed report and unlocks the grounded advisor', async () => {

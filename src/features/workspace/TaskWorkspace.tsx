@@ -31,6 +31,7 @@ import type {
   EvidenceRecord,
   RuntimeTask,
 } from '../../domain/types'
+import { RegionalPulse } from './RegionalPulse'
 
 interface TaskWorkspaceProps {
   preset: AnalysisPreset
@@ -317,7 +318,7 @@ export function TaskWorkspace({
           <div className="workspace-title-row">
             <div>
               <span className="workspace-section-code">ORCHESTRATION / 01</span>
-              <h1>Agent 协作空间</h1>
+              <h1>全球地区声音与 Agent 协作</h1>
             </div>
             <div className="workspace-coverage">
               <span><GlobeHemisphereWest size={14} /> CN · JP · WEST</span>
@@ -327,10 +328,12 @@ export function TaskWorkspace({
 
           <div className="agent-stage">
             <div className="agent-stage__toolbar">
-              <span><Browser size={14} /> LIVE AGENT BROWSERS</span>
-              <small>当前思路仅展示可审计工作摘要，不包含隐藏思维链</small>
+              <span><Browser size={14} /> AGENT BROWSER PROGRESS</span>
+              <small>地区观点全部来自当前已到达、可核验的真实网页证据</small>
               <strong>{visibleEvidenceIds.length.toString().padStart(2, '0')} SIGNALS</strong>
             </div>
+
+            <RegionalPulse evidence={visibleEvidence} regionalStatus={states.regional.status} />
 
             <div className="agent-browser-grid">
               {displayPreset.agents.map((agent, index) => {
