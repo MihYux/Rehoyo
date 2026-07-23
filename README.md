@@ -94,19 +94,18 @@ npm run check      # 单元测试与生产构建
 
 “证据”指可核验的公开帖子或页面标题、正文/摘要及 URL；Niconico 记录是视频页面元数据，并不等同于读取完整评论区。数量仅表示本次成功检索并通过过滤的页面数，不代表玩家总体、舆情占比或统计抽样。
 
-PowerShell 配置示例：
+### 配置 GLM 连接
 
-```powershell
-$env:REHOYO_GLM_API_KEY_FILE = "C:\secure\glm-api-key.txt"
-$env:REHOYO_GLM_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
-$env:REHOYO_GLM_MODEL = "glm-5.2"
-npm run dev
-```
+ReHoYo 支持两种连接方式，配置优先级为 **应用内连接管理 > 外部文件 / 环境变量**。两种方式都不允许把 API Key 写入项目文件、Git、`localStorage` 或日志；模型端点固定为 `https://open.bigmodel.cn/api/coding/paas/v4`，渲染器不能覆盖。
 
-macOS / Linux 配置示例：
+#### 方式一：外部文件 / 环境变量（当前可用，适合首次配置与 CI）
+
+将密钥写到一个独立的纯文本文件（路径自选，务必放在 Git 仓库之外），再通过环境变量或被 Git 忽略的 `.rehoyo-live.json` 告知应用密钥文件的位置。密钥文件只在 Electron 主进程发起请求时读取。
+
+**macOS / Linux**：
 
 ```bash
-# 1. 把密钥写到家目录的纯文本文件（路径自选，务必放在 Git 仓库之外）
+# 1. 把密钥写到家目录（路径自选，不要放在 Git 仓库内）
 echo -n "你的GLM密钥" > ~/.rehoyo/glm-api-key
 chmod 600 ~/.rehoyo/glm-api-key
 
@@ -133,19 +132,35 @@ REHOYO_GLM_MODEL="glm-5.2" \
 npm run dev
 ```
 
-- 密钥文件只在 Electron 主进程发起请求时读取，不会进入渲染器、`localStorage`、日志或 Git。
-- 模型调用固定使用 `https://open.bigmodel.cn/api/coding/paas/v4`；公开检索使用同一密钥访问独立的 `/api/paas/v4/web_search` 工具接口。
-- 也可以创建被 Git 忽略的 `.rehoyo-live.json`：
+**Windows（PowerShell）**：
 
-```json
-{
-  "keyFile": "C:\\secure\\glm-api-key.txt",
-  "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
-  "model": "glm-5.2"
-}
+```powershell
+$env:REHOYO_GLM_API_KEY_FILE = "C:\secure\glm-api-key.txt"
+$env:REHOYO_GLM_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
+$env:REHOYO_GLM_MODEL = "glm-5.2"
+npm run dev
 ```
 
-开发目录存在 `.rehoyo-live.json` 时 Electron 会自动读取；也可使用 `electron . --rehoyo-glm-config=.rehoyo-live.json` 显式指定。接口说明参见[智谱 Coding API](https://docs.bigmodel.cn/cn/guide/develop/forge)与[网络搜索 API](https://docs.bigmodel.cn/api-reference/%E5%B7%A5%E5%85%B7-api/%E7%BD%91%E7%BB%9C%E6%90%9C%E7%B4%A2)。
+或使用启动参数显式指定配置文件：`electron . --rehoyo-glm-config=.rehoyo-live.json`。
+
+#### 方式二：应用内连接管理（推荐，规划中）
+
+应用首次启动时显示一个全屏连接页，用户粘贴 GLM API Key 与 Endpoint 后，主进程使用 Electron `safeStorage` 在操作系统级别加密并保存到：
+
+```text
+<Electron userData>/rehoyo-connection.json
+```
+
+加密后端由操作系统提供（macOS Keychain / Windows DPAPI / Linux libsecret），文件只保存密文。渲染进程只能查询连接状态、提交新凭据或清除本机配置，不能读取已保存的密钥。`safeStorage` 不可用时（例如未解锁的 Linux keyring），密钥仅保存在主进程内存中，重启后需要重新输入，**绝不降级为明文持久化**。任务大厅的「连接设置」入口支持修改或清除本机配置，且不会删除任务历史。
+
+> **当前状态**：连接管理器底层模块 [`electron/connection-manager.mjs`](./electron/connection-manager.mjs) 与单元测试已合并，但**尚未接入主进程与连接页 UI**。接入完成前请使用方式一完成首次配置。设计与实施计划见 [`docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md`](./docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md) 与 [`docs/superpowers/plans/2026-07-23-secure-first-run-connection.md`](./docs/superpowers/plans/2026-07-23-secure-first-run-connection.md)。
+
+#### 端点与模型约束
+
+- 模型调用固定使用 `https://open.bigmodel.cn/api/coding/paas/v4`；公开检索使用同一密钥访问独立的 `/api/paas/v4/web_search` 工具接口。
+- Endpoint 精确 allowlist，渲染器不能覆盖；API Key 长度限制为 1–4096 字符，去除首尾空白后非空。
+- 两种连接方式的失败都不会静默回退到演示数据：检索或鉴权失败会明确报错并停止任务。
+- 接口说明参见[智谱 Coding API](https://docs.bigmodel.cn/cn/guide/develop/forge) 与[网络搜索 API](https://docs.bigmodel.cn/api-reference/%E5%B7%A5%E5%85%B7-api/%E7%BD%91%E7%BB%9C%E6%90%9C%E7%B4%A2)。
 
 ## 桌面安全边界
 
