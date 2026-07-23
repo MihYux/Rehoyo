@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppRoutes } from './App'
+import App, { AppRoutes } from './App'
 import { analysisPresets } from './data/presets'
 import { advanceToElapsedTime, startTask } from './domain/engine'
 import { saveCompletedTask } from './domain/storage'
@@ -18,7 +18,11 @@ vi.mock('./features/advisor/AdvisorWorkspace', () => ({
 }))
 
 describe('App routes', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    window.history.replaceState({}, '', '/')
+    window.location.hash = ''
+  })
 
   it('renders the task lobby at the root route', () => {
     render(
@@ -68,5 +72,25 @@ describe('App routes', () => {
     expect(await screen.findByRole('heading', { name: '全球玩家洞察报告' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /打开 AI 游戏顾问/ }))
     expect(await screen.findByRole('heading', { name: '版本决策顾问' })).toBeInTheDocument()
+  })
+
+  it('keeps desktop navigation in the URL hash for packaged file loading', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: '启动全球分析' }))
+
+    expect(window.location.pathname).toBe('/')
+    expect(window.location.hash).toMatch(/^#\/tasks\/[^/]+\/run$/)
+  })
+
+  it('keeps the desktop route hash while navigating lobby sections', async () => {
+    const user = userEvent.setup()
+    window.location.hash = '#/'
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Agent 团队' }))
+
+    expect(window.location.hash).toBe('#/')
   })
 })

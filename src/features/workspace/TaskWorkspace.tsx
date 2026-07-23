@@ -129,7 +129,7 @@ export function TaskWorkspace({
     <div className="workspace-page">
       <div className="workspace-grid-bg" aria-hidden="true" />
       <header className="workspace-header">
-        <a href="/" className="workspace-back" aria-label="返回任务中心"><ArrowLeft size={17} /></a>
+        <a href="#/" className="workspace-back" aria-label="返回任务中心"><ArrowLeft size={17} /></a>
         <BrandMark compact />
         <div className="workspace-breadcrumb">
           <span>ACTIVE MISSION</span>

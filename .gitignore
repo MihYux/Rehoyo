@@ -1,7 +1,9 @@
 node_modules/
 dist/
 playwright-report/
+playwright-report-electron/
 test-results/
+release/
 coverage/
 *.tsbuildinfo
 *.log

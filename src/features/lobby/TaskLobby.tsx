@@ -53,15 +53,22 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
     onStart(selectedPreset)
   }
 
+  const scrollToSection = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView?.({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }
+
   return (
     <div className="lobby-page">
       <div className="cosmic-grid" aria-hidden="true" />
       <header className="global-header">
         <BrandMark />
         <nav className="global-nav" aria-label="全局导航">
-          <a className="is-active" href="#task-launcher">任务中心</a>
-          <a href="#agent-team">Agent 团队</a>
-          <a href="#recent-tasks">分析档案</a>
+          <button className="is-active" type="button" onClick={() => scrollToSection('task-launcher')}>任务中心</button>
+          <button type="button" onClick={() => scrollToSection('agent-team')}>Agent 团队</button>
+          <button type="button" onClick={() => scrollToSection('recent-tasks')}>分析档案</button>
         </nav>
         <div className="header-status">
           <span className="live-indicator"><i /> SYSTEM READY</span>

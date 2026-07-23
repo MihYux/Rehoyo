@@ -113,7 +113,7 @@ export function ReportDashboard({
   return (
     <div className="report-page">
       <header className="report-header">
-        <a href="/" className="report-back" aria-label="返回任务中心"><ArrowLeft size={16} /></a>
+        <a href="#/" className="report-back" aria-label="返回任务中心"><ArrowLeft size={16} /></a>
         <BrandMark compact />
         <div className="report-mission">
           <span>INTELLIGENCE REPORT</span>
