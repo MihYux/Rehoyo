@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design miHoYo UI"
+  short_description: "Create polished miHoYo-inspired interfaces"
+  default_prompt: "Use $design-mihoyo-ui to design an original technology-brand interface informed by miHoYo and HoYoverse official web patterns."
