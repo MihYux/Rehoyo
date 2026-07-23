@@ -3,6 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('rehoyoDesktop', Object.freeze({
   isElectron: true,
   platform: process.platform,
+  connection: Object.freeze({
+    getStatus: () => ipcRenderer.invoke('rehoyo:connection:status'),
+    save: (input) => ipcRenderer.invoke('rehoyo:connection:save', input),
+    clear: () => ipcRenderer.invoke('rehoyo:connection:clear'),
+  }),
   advisor: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:advisor:status'),
     ask: (request) => ipcRenderer.invoke('rehoyo:advisor:ask', request),

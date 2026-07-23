@@ -4,6 +4,24 @@ export interface LiveAdvisorStatus {
   model: string
 }
 
+export type ConnectionPersistence = 'encrypted' | 'session' | 'external' | 'none'
+
+export interface ConnectionStatus {
+  configured: boolean
+  provider: 'bigmodel' | null
+  endpoint: string
+  endpointHost: string | null
+  model: string | null
+  persistence: ConnectionPersistence
+  warning?: string
+}
+
+export interface ConnectionClient {
+  getStatus: () => Promise<ConnectionStatus>
+  save: (input: { apiKey: string; endpoint: string }) => Promise<ConnectionStatus>
+  clear: () => Promise<{ configured: false }>
+}
+
 export interface LiveAdvisorRequest {
   question: string
   localAnswer: string
@@ -32,6 +50,7 @@ export interface LiveAdvisorClient {
 export interface RehoyoDesktopBridge {
   isElectron: true
   platform: string
+  connection?: ConnectionClient
   advisor?: LiveAdvisorClient
   research?: LiveResearchClient
 }
@@ -78,4 +97,8 @@ export function getLiveAdvisorClient() {
 
 export function getLiveResearchClient() {
   return window.rehoyoDesktop?.research
+}
+
+export function getConnectionClient() {
+  return window.rehoyoDesktop?.connection
 }

@@ -114,7 +114,7 @@ describe('GLM desktop advisor client', () => {
   })
 
   it('prefers an injected API key provider without reading a key file', async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       id: 'provider-request',
       model: 'glm-5.2',
       choices: [{ message: { content: 'Grounded provider response [evidence-1]' } }],
