@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { analysisPresets, createCustomPreset, getPresetById } from './data/presets'
+import { createCustomPreset, getPresetById } from './data/presets'
 import { startTask } from './domain/engine'
-import { loadCompletedTasks } from './domain/storage'
+import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
 import { TaskLobby } from './features/lobby/TaskLobby'
+import { TaskWorkspace } from './features/workspace/TaskWorkspace'
 
 interface ActiveSession {
   preset: AnalysisPreset
@@ -17,14 +18,22 @@ function resolvePreset(task: RuntimeTask): AnalysisPreset {
   return createCustomPreset(task.gameName, task.versionTitle.replace(/^CUSTOM\s*/, ''))
 }
 
-function PendingWorkspace() {
-  return <div role="status">正在进入 Agent 工作区…</div>
-}
-
-function GuardedRun({ session }: { session: ActiveSession | null }) {
+function GuardedRun({
+  session,
+  onComplete,
+}: {
+  session: ActiveSession | null
+  onComplete: (task: RuntimeTask) => void
+}) {
   const { taskId } = useParams()
   if (!session || session.task.id !== taskId) return <Navigate replace to="/" />
-  return <PendingWorkspace />
+  return (
+    <TaskWorkspace
+      preset={session.preset}
+      initialTask={session.task}
+      onComplete={onComplete}
+    />
+  )
 }
 
 export function AppRoutes() {
@@ -43,6 +52,13 @@ export function AppRoutes() {
     navigate(`/tasks/${encodeURIComponent(task.id)}/report?tab=overview`)
   }
 
+  const handleComplete = useCallback((task: RuntimeTask) => {
+    saveCompletedTask(task)
+    setSession((current) => current ? { ...current, task } : current)
+    setRecentTasks(loadCompletedTasks())
+    navigate(`/tasks/${encodeURIComponent(task.id)}/report?tab=overview`)
+  }, [navigate])
+
   return (
     <>
       <div className="app-desktop">
@@ -57,7 +73,10 @@ export function AppRoutes() {
               />
             }
           />
-          <Route path="/tasks/:taskId/run" element={<GuardedRun session={session} />} />
+          <Route
+            path="/tasks/:taskId/run"
+            element={<GuardedRun session={session} onComplete={handleComplete} />}
+          />
           <Route path="/tasks/:taskId/report" element={<Navigate replace to="/" />} />
           <Route path="/tasks/:taskId/advisor" element={<Navigate replace to="/" />} />
           <Route path="*" element={<Navigate replace to="/" />} />
