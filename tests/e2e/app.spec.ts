@@ -28,11 +28,32 @@ test('runs the complete evidence-grounded desktop workflow', async ({ page }, te
 
   await expect(page.getByRole('heading', { name: /听见全球玩家/ })).toBeVisible()
   await expect(page.getByRole('img', { name: 'ReHoYo' })).toBeVisible()
+  const lobbyTitleBox = await page.getByRole('heading', { name: /听见全球玩家/ }).boundingBox()
+  const agentTeamBox = await page.locator('#agent-team').boundingBox()
+  expect(lobbyTitleBox).not.toBeNull()
+  expect(agentTeamBox).not.toBeNull()
+  expect(lobbyTitleBox!.height).toBeLessThan(170)
+  expect(lobbyTitleBox!.x + lobbyTitleBox!.width).toBeLessThanOrEqual(agentTeamBox!.x)
   expect(await aaViolations(page)).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('01-lobby.png'), fullPage: true })
 
   await page.getByRole('button', { name: /启动全球分析/ }).click()
   await expect(page.getByRole('heading', { name: 'Agent 协作空间' })).toBeVisible()
+  const browserCards = page.getByRole('button', { name: /Agent 迷你浏览器/ })
+  await expect(browserCards).toHaveCount(4)
+  const browserCardBoxes = await browserCards.evaluateAll((cards) => cards.map((card) => {
+    const box = card.getBoundingClientRect()
+    return { x: box.x, y: box.y, width: box.width, height: box.height }
+  }))
+  for (let first = 0; first < browserCardBoxes.length; first += 1) {
+    for (let second = first + 1; second < browserCardBoxes.length; second += 1) {
+      const a = browserCardBoxes[first]
+      const b = browserCardBoxes[second]
+      const overlaps = a.x < b.x + b.width && a.x + a.width > b.x
+        && a.y < b.y + b.height && a.y + a.height > b.y
+      expect(overlaps).toBe(false)
+    }
+  }
   await page.getByRole('button', { name: /地区差异 Agent/ }).click()
   await expect(page.getByRole('heading', { name: 'Agent 任务检查器' })).toBeVisible()
   await expect(page.getByText('任务目标', { exact: true })).toBeVisible()

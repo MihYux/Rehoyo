@@ -1,11 +1,14 @@
 import {
   ArrowLeft,
+  Browser,
   Broadcast,
   Check,
   CircleNotch,
   Clock,
   Database,
+  DotsThree,
   GlobeHemisphereWest,
+  LockSimple,
   MagnifyingGlass,
   Pulse,
   Strategy,
@@ -20,6 +23,7 @@ import { BrandMark } from '../../components/BrandMark'
 import { getLiveResearchClient } from '../../desktop/bridge'
 import { advanceToElapsedTime, deriveAgentStates } from '../../domain/engine'
 import type {
+  AgentDefinition,
   AgentId,
   AgentRuntimeState,
   AnalysisEvent,
@@ -81,6 +85,57 @@ function eventIcon(event: AnalysisEvent) {
 }
 
 const liveAgentOrder: AgentId[] = ['research', 'sentiment', 'regional', 'strategy']
+
+const agentWorkspaceLabels: Record<AgentId, string> = {
+  research: '公开社区检索',
+  sentiment: '反馈语义分类',
+  regional: '跨地区语义比对',
+  strategy: '策略综合文档',
+}
+
+const agentIdleSummaries: Record<AgentId, string> = {
+  research: '正在初始化全球公开来源检索队列。',
+  sentiment: '等待首批公开证据后开始情绪与原因分类。',
+  regional: '等待可比对的中、日、英证据簇。',
+  strategy: '等待上游 Agent 完成证据交接。',
+}
+
+interface AgentBrowserPreview {
+  address: string
+  badge: '演示快照' | '真实网页' | '实时进程'
+  evidence?: EvidenceRecord
+  source: string
+  summary: string
+  title: string
+}
+
+function deriveAgentBrowserPreview(
+  agent: AgentDefinition,
+  events: AnalysisEvent[],
+  evidence: EvidenceRecord[],
+  isLive: boolean,
+): AgentBrowserPreview {
+  const agentEvents = events.filter((event) => event.agentId === agent.id)
+  const latestEvent = agentEvents.at(-1)
+  const evidenceId = agentEvents.flatMap((event) => event.evidenceIds).at(-1)
+  const activeEvidence = evidence.find((item) => item.id === evidenceId)
+  const source = latestEvent?.source ?? activeEvidence?.source ?? agent.sources[0] ?? 'ReHoYo Workspace'
+  const hasLivePage = Boolean(isLive && activeEvidence?.url)
+  const address = hasLivePage
+    ? activeEvidence!.url!
+    : isLive
+      ? `agent://${agent.id}/${activeEvidence?.id ?? 'awaiting-handoff'}`
+      : `snapshot://${agent.id}/${activeEvidence?.id ?? 'awaiting-signal'}`
+
+  return {
+    address,
+    badge: hasLivePage ? '真实网页' : isLive ? '实时进程' : '演示快照',
+    evidence: activeEvidence,
+    source,
+    summary: latestEvent?.message ?? agentIdleSummaries[agent.id],
+    title: activeEvidence?.title ?? latestEvent?.message ?? agentWorkspaceLabels[agent.id],
+  }
+}
 
 function deriveLiveAgentStates(events: AnalysisEvent[]) {
   return Object.fromEntries(liveAgentOrder.map((id) => {
@@ -272,43 +327,70 @@ export function TaskWorkspace({
           </div>
 
           <div className="agent-stage">
-            <div className="agent-stage__axis agent-stage__axis--h" aria-hidden="true" />
-            <div className="agent-stage__axis agent-stage__axis--v" aria-hidden="true" />
-            <div className="agent-stage__core">
-              <div className="core-radar" aria-hidden="true"><i /><i /><i /></div>
-              <span>GLOBAL SIGNAL</span>
-              <strong>{visibleEvidenceIds.length}</strong>
-              <small>EVIDENCE LOCKED</small>
+            <div className="agent-stage__toolbar">
+              <span><Browser size={14} /> LIVE AGENT BROWSERS</span>
+              <small>当前思路仅展示可审计工作摘要，不包含隐藏思维链</small>
+              <strong>{visibleEvidenceIds.length.toString().padStart(2, '0')} SIGNALS</strong>
             </div>
 
-            {displayPreset.agents.map((agent, index) => {
-              const Icon = agentIcons[agent.id]
-              const state = states[agent.id]
-              return (
-                <motion.button
-                  type="button"
-                  key={agent.id}
-                  className={`agent-node agent-node--${index + 1} status-${state.status}`}
-                  onClick={() => setSelectedAgent(agent.id)}
-                  aria-label={`${agent.name} ${statusLabels[state.status]}`}
-                  whileHover={{ y: -2 }}
-                >
-                  <span className="agent-node__number">0{index + 1}</span>
-                  <span className="agent-node__icon"><Icon size={24} weight="duotone" /></span>
-                  <span className="agent-node__copy">
-                    <small>{agent.englishName}</small>
-                    <strong>{agent.name}</strong>
-                    <em>{statusLabels[state.status]}</em>
-                  </span>
-                  <span className="agent-node__progress">
-                    <i style={{ width: `${state.progress}%` }} />
-                  </span>
-                  <span className="agent-node__metric">{state.progress}%</span>
-                  {state.status === 'running' && <CircleNotch className="agent-spinner" size={15} />}
-                  {state.status === 'completed' && <Check className="agent-check" size={15} weight="bold" />}
-                </motion.button>
-              )
-            })}
+            <div className="agent-browser-grid">
+              {displayPreset.agents.map((agent, index) => {
+                const Icon = agentIcons[agent.id]
+                const state = states[agent.id]
+                const preview = deriveAgentBrowserPreview(agent, visibleEvents, visibleEvidence, isLive)
+                return (
+                  <motion.button
+                    type="button"
+                    key={agent.id}
+                    className={`agent-node agent-browser-card agent-node--${index + 1} status-${state.status}`}
+                    onClick={() => setSelectedAgent(agent.id)}
+                    aria-label={`${agent.name} 迷你浏览器，${statusLabels[state.status]}`}
+                    aria-pressed={selectedAgent === agent.id}
+                    whileHover={{ y: -2 }}
+                  >
+                    <span className="agent-browser-card__head">
+                      <span className="agent-node__number">0{index + 1}</span>
+                      <span className="agent-node__icon"><Icon size={18} weight="duotone" /></span>
+                      <span className="agent-node__copy">
+                        <small>{agentWorkspaceLabels[agent.id]}</small>
+                        <strong>{agent.name}</strong>
+                      </span>
+                      <span className={`agent-browser-status status-${state.status}`}><i />{statusLabels[state.status]}</span>
+                      <span className="agent-node__metric">{state.progress}%</span>
+                    </span>
+
+                    <span className="agent-browser-window">
+                      <span className="agent-browser-chrome">
+                        <span className="agent-browser-controls" aria-hidden="true"><i /><i /><i /></span>
+                        <span className="agent-browser-address">
+                          <LockSimple size={9} />
+                          <span title={preview.address}>{preview.address}</span>
+                        </span>
+                        <DotsThree size={14} weight="bold" aria-hidden="true" />
+                      </span>
+                      <span className="agent-browser-document">
+                        <span className="agent-browser-document__meta">
+                          <i>{preview.badge}</i>
+                          <em>{preview.evidence ? `${preview.source} · ${preview.evidence.region} · ${preview.evidence.language}` : preview.source}</em>
+                        </span>
+                        <strong>{preview.title}</strong>
+                        <small>{preview.evidence?.excerptZh ?? preview.source}</small>
+                      </span>
+                    </span>
+
+                    <span className="agent-browser-trace">
+                      <span><i /> 当前思路（可审计摘要）</span>
+                      <strong>{preview.summary}</strong>
+                    </span>
+                    <span className="agent-node__progress" aria-label={`进度 ${state.progress}%`}>
+                      <i style={{ width: `${state.progress}%` }} />
+                    </span>
+                    {state.status === 'running' && <CircleNotch className="agent-spinner" size={13} />}
+                    {state.status === 'completed' && <Check className="agent-check" size={13} weight="bold" />}
+                  </motion.button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="stage-footer">

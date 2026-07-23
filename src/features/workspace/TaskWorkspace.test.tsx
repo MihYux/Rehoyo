@@ -26,6 +26,10 @@ describe('TaskWorkspace', () => {
     expect(screen.getByRole('button', { name: /玩家情绪 Agent/ })).toHaveTextContent('运行中')
     expect(screen.getByRole('button', { name: /策略建议 Agent/ })).toHaveTextContent('等待依赖')
     expect(screen.getByRole('log')).toHaveTextContent('社区研究 Agent 已启动全球公开讨论扫描')
+    expect(screen.getAllByLabelText(/Agent 迷你浏览器/)).toHaveLength(4)
+    expect(screen.getAllByText('当前思路（可审计摘要）')).toHaveLength(4)
+    expect(screen.getAllByText('演示快照').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/snapshot:\/\//).length).toBeGreaterThan(0)
 
     await user.click(screen.getByRole('button', { name: /地区差异 Agent/ }))
     expect(await screen.findByRole('heading', { name: 'Agent 任务检查器' })).toBeInTheDocument()
@@ -110,8 +114,10 @@ describe('TaskWorkspace', () => {
 
     render(<TaskWorkspace preset={{ ...base, dataMode: 'live' }} initialTask={task} onComplete={onComplete} />)
 
-    expect(await screen.findByText('CN 公开网页搜索返回 1 条相关页面')).toBeInTheDocument()
+    expect((await screen.findAllByText('CN 公开网页搜索返回 1 条相关页面')).length).toBeGreaterThan(0)
     expect(screen.getByText('REAL WEB DATA · NO SYNTHETIC FALLBACK')).toBeInTheDocument()
+    expect(screen.getAllByText('真实网页').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(liveEvidence.url).length).toBeGreaterThan(0)
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'completed', presetSnapshot: expect.objectContaining({ dataMode: 'live' }) }),
       expect.objectContaining({ dataMode: 'live' }),
