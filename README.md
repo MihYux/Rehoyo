@@ -153,7 +153,7 @@ npm run dev
 
 加密后端由操作系统提供（macOS Keychain / Windows DPAPI / Linux libsecret），文件只保存密文。渲染进程只能查询连接状态、提交新凭据或清除本机配置，不能读取已保存的密钥。`safeStorage` 不可用时（例如未解锁的 Linux keyring），密钥仅保存在主进程内存中，重启后需要重新输入，**绝不降级为明文持久化**。任务大厅的「连接设置」入口支持修改或清除本机配置，且不会删除任务历史。
 
-> **当前状态**：连接管理器底层模块 [`electron/connection-manager.mjs`](./electron/connection-manager.mjs) 与单元测试已合并，但**尚未接入主进程与连接页 UI**。接入完成前请使用方式一完成首次配置。设计与实施计划见 [`docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md`](./docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md) 与 [`docs/superpowers/plans/2026-07-23-secure-first-run-connection.md`](./docs/superpowers/plans/2026-07-23-secure-first-run-connection.md)。
+> **当前状态**：连接管理器 [`electron/connection-manager.mjs`](./electron/connection-manager.mjs)、主进程 IPC、预加载桥接 [`src/desktop/bridge.ts`](./src/desktop/bridge.ts) 与单元测试已合并，主进程层已就位；**连接页 React UI 与端到端测试仍在跟进**，因此用户暂不能从应用界面输入密钥。UI 接入完成前请使用方式一完成首次配置。设计与实施计划见 [`docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md`](./docs/superpowers/specs/2026-07-23-secure-first-run-connection-design.md) 与 [`docs/superpowers/plans/2026-07-23-secure-first-run-connection.md`](./docs/superpowers/plans/2026-07-23-secure-first-run-connection.md)。
 
 #### 端点与模型约束
 
