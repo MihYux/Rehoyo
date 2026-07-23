@@ -1,5 +1,6 @@
 export interface GlmRuntimeConfig {
   readonly baseUrl: string
+  readonly searchBaseUrl: string
   readonly model: string
   readonly keyFile: string
   readonly configured: boolean
@@ -8,6 +9,7 @@ export interface GlmRuntimeConfig {
 export interface GlmAdvisorRequest {
   question: string
   localAnswer: string
+  dataMode?: 'demo' | 'live'
   evidence: Array<{
     id: string
     source: string
@@ -15,6 +17,8 @@ export interface GlmAdvisorRequest {
     excerptZh: string
     sentiment: string
     topics: string[]
+    title?: string
+    url?: string
   }>
 }
 

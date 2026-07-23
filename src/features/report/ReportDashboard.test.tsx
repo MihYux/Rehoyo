@@ -32,4 +32,29 @@ describe('ReportDashboard', () => {
     await user.click(screen.getByRole('tab', { name: '策略建议' }))
     expect(screen.getByText('重写角色机制传播材料')).toBeInTheDocument()
   })
+
+  it('labels live evidence as real and exposes its verifiable source URL', async () => {
+    const user = userEvent.setup()
+    const base = analysisPresets[0]
+    const livePreset = {
+      ...base,
+      dataMode: 'live' as const,
+      evidence: base.evidence.map((item, index) => ({
+        ...item,
+        synthetic: false,
+        title: `真实公开页面 ${index + 1}`,
+        url: `https://example.com/evidence/${index + 1}`,
+      })),
+      report: { ...base.report, sampleCount: base.evidence.length },
+    }
+    const task = { ...advanceToElapsedTime(livePreset, startTask(livePreset, 1_000), livePreset.durationMs), presetSnapshot: livePreset }
+
+    render(<ReportDashboard preset={livePreset} task={task} onOpenAdvisor={vi.fn()} />)
+
+    expect(screen.getAllByText(/实时公开网页/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('演示数据快照')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '争议与证据' }))
+    expect(screen.getAllByText(/真实公开页面/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/https:\/\/example.com\/evidence\//).length).toBeGreaterThan(0)
+  })
 })

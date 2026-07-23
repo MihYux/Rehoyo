@@ -9,6 +9,7 @@ import {
   requestGlmAdvisor,
   sanitizeGlmAdvisorRequest,
 } from './glm-client.mjs'
+import { runLiveResearch, sanitizeResearchRequest } from './research-client.mjs'
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(electronDirectory, '..')
@@ -40,6 +41,41 @@ ipcMain.handle('rehoyo:advisor:ask', async (_event, input) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'GLM request failed.'
     return { ok: false, error: message.slice(0, 240) }
+  }
+})
+
+const activeResearchRuns = new Set()
+
+ipcMain.handle('rehoyo:research:status', () => ({
+  configured: glmConfig.configured,
+  model: glmConfig.model,
+  retrieval: 'BigModel Web Search + public RSS',
+  searchEndpoint: new URL(glmConfig.searchBaseUrl).hostname,
+}))
+
+ipcMain.handle('rehoyo:research:run', async (event, input) => {
+  const runId = String(input?.runId || '').slice(0, 160)
+  if (!runId) return { ok: false, error: 'A research run id is required.' }
+  if (activeResearchRuns.has(runId)) return { ok: false, error: 'This live research task is already running.' }
+
+  activeResearchRuns.add(runId)
+  try {
+    const request = sanitizeResearchRequest(input)
+    const preset = await runLiveResearch({
+      config: glmConfig,
+      request,
+      onEvent: (researchEvent) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('rehoyo:research:event', { runId, event: researchEvent })
+        }
+      },
+    })
+    return { ok: true, preset }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Live research failed.'
+    return { ok: false, error: message.slice(0, 300) }
+  } finally {
+    activeResearchRuns.delete(runId)
   }
 })
 

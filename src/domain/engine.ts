@@ -52,6 +52,7 @@ export function startTask(preset: AnalysisPreset, startedAt = Date.now()): Runti
       startedAt,
       elapsedMs: 0,
       visibleEventIds: [],
+      dataMode: preset.dataMode ?? 'demo',
     },
     0,
   )

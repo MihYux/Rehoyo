@@ -18,4 +18,20 @@ describe('advisor response matching', () => {
     expect(response.evidenceIds).toEqual([])
     expect(response.answer).toContain('当前演示快照没有足够证据')
   })
+
+  it('grounds live advisor questions in retrieved evidence even without preset canned answers', () => {
+    const base = analysisPresets[0]
+    const live = {
+      ...base,
+      dataMode: 'live' as const,
+      advisorAnswers: [],
+      evidence: base.evidence.slice(0, 2).map((item, index) => ({ ...item, id: `live-${index}`, synthetic: false, url: `https://example.com/${index}` })),
+    }
+
+    const response = getAdvisorResponse(live, '下一版本应该避免什么问题？')
+
+    expect(response.isFallback).toBe(false)
+    expect(response.evidenceIds).toEqual(expect.arrayContaining(['live-0']))
+    expect(response.answer).toContain(live.report.summary)
+  })
 })

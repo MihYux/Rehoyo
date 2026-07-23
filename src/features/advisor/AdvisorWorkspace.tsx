@@ -38,6 +38,10 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
   const [isAsking, setIsAsking] = useState(false)
   const [liveStatus, setLiveStatus] = useState<LiveAdvisorStatus>()
   const advisorClient = useMemo(() => liveAdvisor ?? getLiveAdvisorClient(), [liveAdvisor])
+  const isLiveResearch = preset.dataMode === 'live'
+  const suggestedQuestions = preset.advisorAnswers.length
+    ? preset.advisorAnswers.map((item) => item.question)
+    : ['不同地区的真实证据有什么差异？', '当前最大风险是什么？', '下一版本应该优先改进什么？', '哪些结论的证据仍然不足？']
   const activeTurn = turns.at(-1)
   const activeEvidence = useMemo(
     () => preset.evidence.filter((item) => activeTurn?.evidenceIds.includes(item.id)),
@@ -93,10 +97,13 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
           excerptZh: item.excerptZh,
           sentiment: item.sentiment,
           topics: item.topics,
+          title: item.title,
+          url: item.url,
         }))
       const result = await advisorClient.ask({
         question: trimmed,
         localAnswer: response.answer,
+        dataMode: isLiveResearch ? 'live' : 'demo',
         evidence,
       })
 
@@ -146,9 +153,9 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
           <section>
             <span>SUGGESTED QUESTIONS</span>
             <div className="suggested-questions">
-              {preset.advisorAnswers.map((item, index) => (
-                <button type="button" key={item.id} aria-label={item.question} disabled={isAsking} onClick={() => void ask(item.question)}>
-                  <i>{String(index + 1).padStart(2, '0')}</i><span>{item.question}</span><ArrowRight size={13} />
+              {suggestedQuestions.map((question, index) => (
+                <button type="button" key={question} aria-label={question} disabled={isAsking} onClick={() => void ask(question)}>
+                  <i>{String(index + 1).padStart(2, '0')}</i><span>{question}</span><ArrowRight size={13} />
                 </button>
               ))}
             </div>
@@ -160,7 +167,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
           <div className="advisor-chat__head">
             <div><ChatCircleText size={17} /><span>ADVISOR SESSION</span></div>
             <small className={liveStatus?.configured ? 'is-live' : ''}>
-              {liveStatus?.configured ? `${liveStatus.model.toLocaleUpperCase()} 实时连接` : '本地证据模式 · 演示数据快照'}
+              {liveStatus?.configured ? `${liveStatus.model.toLocaleUpperCase()} 实时连接` : `本地证据模式 · ${isLiveResearch ? '实时公开网页' : '演示数据快照'}`}
             </small>
           </div>
           <div className="conversation-stream" aria-live="polite">
@@ -196,7 +203,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
             <input aria-label="向 AI 游戏顾问提问" value={input} disabled={isAsking} onChange={(event) => setInput(event.target.value)} placeholder="询问地区差异、版本风险或下一步策略…" />
             <button type="submit" disabled={!input.trim() || isAsking}><span>{isAsking ? '分析中' : '发送问题'}</span><PaperPlaneTilt size={16} weight="fill" /></button>
           </form>
-          <p className="advisor-composer-note">AI 回答仅基于当前演示数据快照，不代表实时市场研究结论。</p>
+          <p className="advisor-composer-note">AI 回答仅基于当前{isLiveResearch ? '任务检索到的公开网页证据；不代表全部玩家总体' : '演示数据快照，不代表实时市场研究结论'}。</p>
         </section>
 
         <aside className="advisor-evidence-rail">
@@ -209,6 +216,7 @@ export function AdvisorWorkspace({ preset, onBackToReport, onOpenEvidence, liveA
                   <article key={item.id}>
                     <header><i>{String(index + 1).padStart(2, '0')}</i><span>{item.source}</span><small>{item.region}</small></header>
                     <blockquote>{item.excerptZh}</blockquote>
+                    {isLiveResearch && item.url && <code className="evidence-source-url">{item.url}</code>}
                     <footer><span>{item.id}</span><button type="button" onClick={() => onOpenEvidence(item.id, 'controversies')}>在报告中查看 <ArrowRight size={12} /></button></footer>
                   </article>
                 ))}

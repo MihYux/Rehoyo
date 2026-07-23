@@ -31,6 +31,7 @@ interface ActiveSession {
 }
 
 function resolvePreset(task: RuntimeTask): AnalysisPreset {
+  if (task.presetSnapshot?.dataMode === 'live') return task.presetSnapshot
   const known = getPresetById(task.presetId)
   if (known) return known
   return createCustomPreset(task.gameName, task.versionTitle.replace(/^CUSTOM\s*/, ''))
@@ -41,7 +42,7 @@ function GuardedRun({
   onComplete,
 }: {
   session: ActiveSession | null
-  onComplete: (task: RuntimeTask) => void
+  onComplete: (task: RuntimeTask, preset?: AnalysisPreset) => void
 }) {
   const { taskId } = useParams()
   if (!session || session.task.id !== taskId) return <Navigate replace to="/" />
@@ -135,9 +136,9 @@ export function AppRoutes() {
     navigate(`/tasks/${encodeURIComponent(task.id)}/report?tab=overview`)
   }
 
-  const handleComplete = useCallback((task: RuntimeTask) => {
+  const handleComplete = useCallback((task: RuntimeTask, completedPreset?: AnalysisPreset) => {
     saveCompletedTask(task)
-    setSession((current) => current ? { ...current, task } : current)
+    setSession((current) => current ? { preset: completedPreset ?? current.preset, task } : current)
     setRecentTasks(loadCompletedTasks())
     navigate(`/tasks/${encodeURIComponent(task.id)}/report?tab=overview`)
   }, [navigate])

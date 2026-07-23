@@ -58,7 +58,10 @@ export interface EvidenceRecord {
   confidence: number
   engagement: number
   publishedLabel: string
-  synthetic: true
+  title?: string
+  url?: string
+  retrievedAt?: string
+  synthetic: boolean
 }
 
 export interface TrendPoint {
@@ -141,6 +144,7 @@ export interface AnalysisPreset {
   report: InsightReport
   advisorAnswers: AdvisorAnswer[]
   isGeneric?: boolean
+  dataMode?: 'demo' | 'live'
 }
 
 export interface RuntimeTask {
@@ -153,6 +157,8 @@ export interface RuntimeTask {
   elapsedMs: number
   visibleEventIds: string[]
   completedAt?: number
+  dataMode?: 'demo' | 'live'
+  presetSnapshot?: AnalysisPreset
 }
 
 export interface AgentRuntimeState {

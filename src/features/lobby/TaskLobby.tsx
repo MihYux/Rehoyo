@@ -11,14 +11,15 @@ import {
   TrendUp,
 } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BrandMark } from '../../components/BrandMark'
 import { analysisPresets, createCustomPreset } from '../../data/presets'
+import { getLiveResearchClient, type LiveResearchStatus } from '../../desktop/bridge'
 import type { AgentId, AnalysisPreset, RuntimeTask } from '../../domain/types'
 
 interface TaskLobbyProps {
   recentTasks: RuntimeTask[]
-  onStart: (preset: AnalysisPreset) => void
+  onStart: (preset: AnalysisPreset, mode?: 'live' | 'demo') => void
   onOpenReport: (task: RuntimeTask) => void
 }
 
@@ -35,6 +36,8 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
   const [selection, setSelection] = useState(analysisPresets[0].id)
   const [customGame, setCustomGame] = useState('')
   const [customUpdate, setCustomUpdate] = useState('')
+  const [researchStatus, setResearchStatus] = useState<LiveResearchStatus | null>(null)
+  const [researchMode, setResearchMode] = useState<'live' | 'demo'>('demo')
   const isCustom = selection === 'custom'
   const selectedPreset = useMemo(
     () => analysisPresets.find((preset) => preset.id === selection) ?? analysisPresets[0],
@@ -44,13 +47,29 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
     ? createCustomPreset(customGame || '自定义游戏', customUpdate || '自定义版本更新')
     : selectedPreset
 
+  useEffect(() => {
+    const client = getLiveResearchClient()
+    if (!client) return
+    let cancelled = false
+    client.getStatus().then((status) => {
+      if (cancelled) return
+      setResearchStatus(status)
+      if (status.configured) setResearchMode('live')
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+
   const handleStart = () => {
+    const start = (preset: AnalysisPreset) => {
+      if (researchMode === 'live') onStart({ ...preset, dataMode: 'live' }, 'live')
+      else onStart(preset)
+    }
     if (isCustom) {
       if (!customGame.trim() || !customUpdate.trim()) return
-      onStart(createCustomPreset(customGame, customUpdate))
+      start(createCustomPreset(customGame, customUpdate))
       return
     }
-    onStart(selectedPreset)
+    start(selectedPreset)
   }
 
   const scrollToSection = (sectionId: string) => {
@@ -107,7 +126,29 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                 <span className="panel-index">MISSION CONFIGURATION</span>
                 <h2 id="task-config-title">配置全球分析任务</h2>
               </div>
-              <span className="snapshot-badge">演示数据快照</span>
+              <span className={`snapshot-badge ${researchMode === 'live' ? 'is-live' : ''}`}>
+                {researchMode === 'live' ? 'REAL WEB · GLM AGENTS' : '演示数据快照'}
+              </span>
+            </div>
+
+            <div className="research-mode-selector" aria-label="研究数据模式">
+              <button
+                type="button"
+                className={researchMode === 'live' ? 'is-active' : ''}
+                onClick={() => researchStatus?.configured && setResearchMode('live')}
+                disabled={!researchStatus?.configured}
+              >
+                <Broadcast size={17} />
+                <span><strong>真实公开网络研究</strong><small>{researchStatus?.configured ? `${researchStatus.model.toUpperCase()} · Web Search + RSS` : '需要桌面端 GLM 配置'}</small></span>
+              </button>
+              <button
+                type="button"
+                className={researchMode === 'demo' ? 'is-active' : ''}
+                onClick={() => setResearchMode('demo')}
+              >
+                <Database size={17} />
+                <span><strong>确定性演示快照</strong><small>离线可重复 · synthetic 数据</small></span>
+              </button>
             </div>
 
             <fieldset className="game-selector">
@@ -149,13 +190,13 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                   <span>版本或更新内容</span>
                   <input value={customUpdate} onChange={(event) => setCustomUpdate(event.target.value)} placeholder="例如：2.4 夏季活动" />
                 </label>
-                <p><Sparkle size={14} /> 自定义任务使用通用演示模板，不代表实时互联网数据。</p>
+                <p><Sparkle size={14} /> {researchMode === 'live' ? '将按你输入的游戏与更新实时检索公开网页，不使用通用演示评论。' : '自定义任务使用通用演示模板，不代表实时互联网数据。'}</p>
               </div>
             ) : (
               <div className="version-readout">
                 <span>历史版本 / 更新内容</span>
                 <strong>{selectedPreset.version.label} · {selectedPreset.version.title}</strong>
-                <small>{selectedPreset.report.sampleCount.toLocaleString('zh-CN')} 条讨论快照 · {selectedPreset.sources.length} 类公开来源</small>
+                <small>{researchMode === 'live' ? '启动后实时检索 · 结果数量取决于可访问公开来源' : `${selectedPreset.report.sampleCount.toLocaleString('zh-CN')} 条讨论快照 · ${selectedPreset.sources.length} 类公开来源`}</small>
               </div>
             )}
 
@@ -169,7 +210,7 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
                 onClick={handleStart}
                 disabled={isCustom && (!customGame.trim() || !customUpdate.trim())}
               >
-                <span>启动全球分析</span>
+                <span>{researchMode === 'live' ? '启动真实研究' : '启动全球分析'}</span>
                 <ArrowRight size={20} weight="bold" />
               </button>
             </div>
@@ -217,7 +258,7 @@ export function TaskLobby({ recentTasks, onStart, onOpenReport }: TaskLobbyProps
           </div>
 
           <div className="orbit-panel__footer">
-            <div><span>预计运行</span><strong>{Math.round(displayedPreset.durationMs / 1000)} SEC</strong></div>
+            <div><span>预计运行</span><strong>{researchMode === 'live' ? 'NETWORK DEPENDENT' : `${Math.round(displayedPreset.durationMs / 1000)} SEC`}</strong></div>
             <div><span>协作模式</span><strong>SEQUENTIAL + OVERLAP</strong></div>
             <div><span>输出</span><strong>DECISION REPORT</strong></div>
           </div>

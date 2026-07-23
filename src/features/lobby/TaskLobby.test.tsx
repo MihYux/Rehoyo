@@ -1,9 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TaskLobby } from './TaskLobby'
 
 describe('TaskLobby', () => {
+  afterEach(() => {
+    delete window.rehoyoDesktop
+  })
+
   it('presents the ReHoYo brand and three flagship games', () => {
     render(<TaskLobby recentTasks={[]} onStart={vi.fn()} onOpenReport={vi.fn()} />)
 
@@ -11,6 +15,26 @@ describe('TaskLobby', () => {
     expect(screen.getByRole('button', { name: /原神/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /崩坏：星穹铁道/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /绝区零/ })).toBeInTheDocument()
+  })
+
+  it('defaults to real public-web research when the desktop agent is configured', async () => {
+    const onStart = vi.fn()
+    window.rehoyoDesktop = {
+      isElectron: true,
+      platform: 'win32',
+      research: {
+        getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'BigModel Web Search + public RSS', searchEndpoint: 'open.bigmodel.cn' })),
+        run: vi.fn(),
+        onEvent: vi.fn(() => () => {}),
+      },
+    }
+    const user = userEvent.setup()
+    render(<TaskLobby recentTasks={[]} onStart={onStart} onOpenReport={vi.fn()} />)
+
+    expect(await screen.findByText('真实公开网络研究')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '启动真实研究' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ game: expect.objectContaining({ name: '原神' }) }), 'live')
   })
 
   it('collects a custom game and update before starting', async () => {

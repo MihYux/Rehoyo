@@ -17,19 +17,21 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrandMark } from '../../components/BrandMark'
+import { getLiveResearchClient } from '../../desktop/bridge'
 import { advanceToElapsedTime, deriveAgentStates } from '../../domain/engine'
 import type {
   AgentId,
   AgentRuntimeState,
   AnalysisEvent,
   AnalysisPreset,
+  EvidenceRecord,
   RuntimeTask,
 } from '../../domain/types'
 
 interface TaskWorkspaceProps {
   preset: AnalysisPreset
   initialTask: RuntimeTask
-  onComplete: (task: RuntimeTask) => void
+  onComplete: (task: RuntimeTask, preset?: AnalysisPreset) => void
   clock?: () => number
 }
 
@@ -78,6 +80,25 @@ function eventIcon(event: AnalysisEvent) {
   return Broadcast
 }
 
+const liveAgentOrder: AgentId[] = ['research', 'sentiment', 'regional', 'strategy']
+
+function deriveLiveAgentStates(events: AnalysisEvent[]) {
+  return Object.fromEntries(liveAgentOrder.map((id) => {
+    const agentEvents = events.filter((event) => event.agentId === id)
+    const latest = agentEvents.at(-1)
+    const finished = agentEvents.some((event) => event.kind === 'handoff' || event.kind === 'complete')
+    let status: AgentRuntimeState['status'] = id === 'strategy' ? 'locked' : 'queued'
+    if (latest) status = finished ? 'completed' : 'running'
+    return [id, {
+      id,
+      status,
+      progress: latest?.progress ?? 0,
+      evidenceIds: [...new Set(agentEvents.flatMap((event) => event.evidenceIds))],
+      findingIds: agentEvents.filter((event) => ['finding', 'risk'].includes(event.kind)).map((event) => event.id),
+    }]
+  })) as Record<AgentId, AgentRuntimeState>
+}
+
 export function TaskWorkspace({
   preset,
   initialTask,
@@ -85,11 +106,18 @@ export function TaskWorkspace({
   clock = Date.now,
 }: TaskWorkspaceProps) {
   const [task, setTask] = useState(initialTask)
+  const [runtimePreset, setRuntimePreset] = useState(preset)
+  const [liveEvents, setLiveEvents] = useState<AnalysisEvent[]>([])
+  const [liveEvidence, setLiveEvidence] = useState<EvidenceRecord[]>([])
+  const [liveError, setLiveError] = useState('')
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null)
   const completionSent = useRef(false)
+  const liveRunStarted = useRef(false)
   const clockScale = Number(import.meta.env.VITE_REHOYO_CLOCK_SCALE ?? '1') || 1
+  const isLive = initialTask.dataMode === 'live' || preset.dataMode === 'live'
 
   useEffect(() => {
+    if (isLive) return
     const update = () => {
       setTask((current) =>
         advanceToElapsedTime(preset, current, (clock() - current.startedAt) * clockScale),
@@ -98,30 +126,113 @@ export function TaskWorkspace({
     update()
     const interval = window.setInterval(update, 120)
     return () => window.clearInterval(interval)
-  }, [clock, clockScale, preset])
+  }, [clock, clockScale, isLive, preset])
+
+  useEffect(() => {
+    if (!isLive || liveRunStarted.current) return
+    const client = getLiveResearchClient()
+    if (!client) {
+      setLiveError('真实研究仅可在已配置 GLM 的 ReHoYo Electron 桌面端运行。')
+      setTask((current) => ({ ...current, status: 'failed' }))
+      return
+    }
+    liveRunStarted.current = true
+    let cancelled = false
+    const unsubscribe = client.onEvent(({ runId, event }) => {
+      if (cancelled || runId !== initialTask.id) return
+      const evidenceRecords = event.evidenceRecords ?? []
+      setLiveEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event])
+      if (evidenceRecords.length) {
+        setLiveEvidence((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]))
+          evidenceRecords.forEach((item) => byId.set(item.id, item))
+          return [...byId.values()]
+        })
+      }
+    })
+    const interval = window.setInterval(() => {
+      setTask((current) => current.status === 'running'
+        ? { ...current, elapsedMs: Math.max(0, clock() - current.startedAt) }
+        : current)
+    }, 250)
+
+    client.run({
+      runId: initialTask.id,
+      gameName: preset.game.name,
+      versionLabel: preset.version.label,
+      versionTitle: preset.version.title,
+      regions: preset.regions,
+    }).then((result) => {
+      if (cancelled) return
+      if (!result.ok) {
+        setLiveError(result.error)
+        setTask((current) => ({ ...current, status: 'failed' }))
+        return
+      }
+      const completedAt = clock()
+      setRuntimePreset(result.preset)
+      setLiveEvents(result.preset.events)
+      setLiveEvidence(result.preset.evidence)
+      setTask((current) => ({
+        ...current,
+        presetId: result.preset.id,
+        status: 'completed',
+        elapsedMs: result.preset.durationMs,
+        visibleEventIds: result.preset.events.map((event) => event.id),
+        completedAt,
+        dataMode: 'live',
+        presetSnapshot: result.preset,
+      }))
+    }).catch((error) => {
+      if (cancelled) return
+      setLiveError(error instanceof Error ? error.message : '真实研究请求失败。')
+      setTask((current) => ({ ...current, status: 'failed' }))
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+      window.clearInterval(interval)
+    }
+  }, [clock, initialTask.id, isLive, preset.game.name, preset.regions, preset.version.label, preset.version.title])
 
   useEffect(() => {
     if (task.status !== 'completed' || completionSent.current) return
 
     completionSent.current = true
     const completedTask = task
-    const timeout = window.setTimeout(() => onComplete(completedTask), 1_100)
+    const timeout = window.setTimeout(() => onComplete(completedTask, runtimePreset), 1_100)
     return () => window.clearTimeout(timeout)
-  }, [onComplete, task.status])
+  }, [onComplete, runtimePreset, task.status])
 
-  const states = useMemo(() => deriveAgentStates(preset, task), [preset, task])
+  const displayPreset = useMemo(() => isLive && task.status !== 'completed'
+    ? {
+      ...preset,
+      dataMode: 'live' as const,
+      durationMs: Math.max(task.elapsedMs + 30_000, 120_000),
+      events: liveEvents,
+      evidence: liveEvidence,
+      sources: [...new Set(liveEvidence.map((item) => item.source))],
+    }
+    : runtimePreset, [isLive, liveEvents, liveEvidence, preset, runtimePreset, task.elapsedMs, task.status])
+  const states = useMemo(
+    () => isLive ? deriveLiveAgentStates(displayPreset.events) : deriveAgentStates(displayPreset, task),
+    [displayPreset, isLive, task],
+  )
   const visibleEvents = useMemo(
-    () => preset.events.filter((event) => task.visibleEventIds.includes(event.id)),
-    [preset.events, task.visibleEventIds],
+    () => isLive ? displayPreset.events : displayPreset.events.filter((event) => task.visibleEventIds.includes(event.id)),
+    [displayPreset.events, isLive, task.visibleEventIds],
   )
   const visibleEvidenceIds = useMemo(
     () => [...new Set(visibleEvents.flatMap((event) => event.evidenceIds))],
     [visibleEvents],
   )
-  const visibleEvidence = preset.evidence.filter((item) => visibleEvidenceIds.includes(item.id))
-  const overallProgress = Math.min(100, Math.round((task.elapsedMs / preset.durationMs) * 100))
+  const visibleEvidence = displayPreset.evidence.filter((item) => visibleEvidenceIds.includes(item.id))
+  const overallProgress = isLive
+    ? Math.round(states.research.progress * 0.35 + states.sentiment.progress * 0.2 + states.regional.progress * 0.2 + states.strategy.progress * 0.25)
+    : Math.min(100, Math.round((task.elapsedMs / displayPreset.durationMs) * 100))
   const activeAgent = selectedAgent
-    ? preset.agents.find((agent) => agent.id === selectedAgent)
+    ? displayPreset.agents.find((agent) => agent.id === selectedAgent)
     : undefined
   const activeState = selectedAgent ? states[selectedAgent] : undefined
 
@@ -133,9 +244,9 @@ export function TaskWorkspace({
         <BrandMark compact />
         <div className="workspace-breadcrumb">
           <span>ACTIVE MISSION</span>
-          <strong>{preset.game.name} <i>/</i> {preset.version.label} · {preset.version.title}</strong>
+          <strong>{displayPreset.game.name} <i>/</i> {displayPreset.version.label} · {displayPreset.version.title}</strong>
         </div>
-        {preset.isGeneric && <span className="generic-template-label">通用演示模板</span>}
+        {displayPreset.isGeneric && !isLive && <span className="generic-template-label">通用演示模板</span>}
         <div className="workspace-clock">
           <span>ELAPSED</span>
           <strong>{formatElapsed(task.elapsedMs)}</strong>
@@ -170,7 +281,7 @@ export function TaskWorkspace({
               <small>EVIDENCE LOCKED</small>
             </div>
 
-            {preset.agents.map((agent, index) => {
+            {displayPreset.agents.map((agent, index) => {
               const Icon = agentIcons[agent.id]
               const state = states[agent.id]
               return (
@@ -202,9 +313,9 @@ export function TaskWorkspace({
 
           <div className="stage-footer">
             <div><span>当前阶段</span><strong>{task.status === 'completed' ? 'REPORT COMPLETE' : visibleEvents.at(-1)?.phase.toUpperCase() ?? 'INITIALIZING'}</strong></div>
-            <div><span>来源覆盖</span><strong>{preset.sources.length} CHANNELS</strong></div>
-            <div><span>模拟样本</span><strong>{preset.report.sampleCount.toLocaleString('zh-CN')} SIGNALS</strong></div>
-            <div className="stage-footer__notice"><span>透明性声明</span><strong>DEMO SNAPSHOT · NOT LIVE DATA</strong></div>
+            <div><span>来源覆盖</span><strong>{displayPreset.sources.length} CHANNELS</strong></div>
+            <div><span>{isLive ? '真实证据' : '模拟样本'}</span><strong>{isLive ? visibleEvidence.length : displayPreset.report.sampleCount.toLocaleString('zh-CN')} SIGNALS</strong></div>
+            <div className="stage-footer__notice"><span>透明性声明</span><strong>{isLive ? 'REAL WEB DATA · NO SYNTHETIC FALLBACK' : 'DEMO SNAPSHOT · NOT LIVE DATA'}</strong></div>
           </div>
         </section>
 
@@ -305,12 +416,12 @@ export function TaskWorkspace({
       <section className="timeline-console">
         <div className="timeline-console__head">
           <div><Broadcast size={14} /><strong>AGENT TIMELINE</strong><span>实时执行日志</span></div>
-          <div><i /> AUTO FOLLOW <span>{visibleEvents.length}/{preset.events.length} EVENTS</span></div>
+          <div><i /> AUTO FOLLOW <span>{visibleEvents.length}/{displayPreset.events.length} EVENTS</span></div>
         </div>
         <div className="timeline-log" role="log" aria-live="polite">
           {visibleEvents.map((event, index) => {
             const Icon = eventIcon(event)
-            const agent = preset.agents.find((item) => item.id === event.agentId)!
+            const agent = displayPreset.agents.find((item) => item.id === event.agentId)!
             return (
               <div className={`timeline-entry timeline-entry--${event.kind}`} key={event.id}>
                 <time>{formatEventTime(task.startedAt, event.offsetMs)}</time>
@@ -328,6 +439,17 @@ export function TaskWorkspace({
       </section>
 
       <AnimatePresence>
+        {task.status === 'failed' && (
+          <motion.div className="report-ready-overlay research-failed-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <motion.div initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+              <Warning size={30} weight="fill" />
+              <span>LIVE RESEARCH STOPPED</span>
+              <strong>真实研究任务未完成</strong>
+              <small>{liveError || '公开来源或模型服务返回错误；系统没有使用演示数据补位。'}</small>
+              <a href="#/">返回任务中心</a>
+            </motion.div>
+          </motion.div>
+        )}
         {task.status === 'completed' && (
           <motion.div className="report-ready-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <motion.div initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>

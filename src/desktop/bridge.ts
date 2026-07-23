@@ -7,6 +7,7 @@ export interface LiveAdvisorStatus {
 export interface LiveAdvisorRequest {
   question: string
   localAnswer: string
+  dataMode?: 'demo' | 'live'
   evidence: Array<{
     id: string
     source: string
@@ -14,6 +15,8 @@ export interface LiveAdvisorRequest {
     excerptZh: string
     sentiment: string
     topics: string[]
+    title?: string
+    url?: string
   }>
 }
 
@@ -30,6 +33,37 @@ export interface RehoyoDesktopBridge {
   isElectron: true
   platform: string
   advisor?: LiveAdvisorClient
+  research?: LiveResearchClient
+}
+
+export interface LiveResearchStatus {
+  configured: boolean
+  model: string
+  retrieval: string
+  searchEndpoint: string
+}
+
+export interface LiveResearchEventPayload {
+  runId: string
+  event: import('../domain/types').AnalysisEvent & {
+    evidenceRecords?: import('../domain/types').EvidenceRecord[]
+  }
+}
+
+export type LiveResearchResult =
+  | { ok: true; preset: import('../domain/types').AnalysisPreset }
+  | { ok: false; error: string }
+
+export interface LiveResearchClient {
+  getStatus: () => Promise<LiveResearchStatus>
+  run: (request: {
+    runId: string
+    gameName: string
+    versionLabel: string
+    versionTitle: string
+    regions: string[]
+  }) => Promise<LiveResearchResult>
+  onEvent: (listener: (payload: LiveResearchEventPayload) => void) => () => void
 }
 
 declare global {
@@ -40,4 +74,8 @@ declare global {
 
 export function getLiveAdvisorClient() {
   return window.rehoyoDesktop?.advisor
+}
+
+export function getLiveResearchClient() {
+  return window.rehoyoDesktop?.research
 }

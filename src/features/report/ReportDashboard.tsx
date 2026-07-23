@@ -63,7 +63,9 @@ export function ReportDashboard({
   const [regionFilter, setRegionFilter] = useState<'ALL' | Exclude<RegionCode, 'GLOBAL'>>('ALL')
   const [sourceFilter, setSourceFilter] = useState('ALL')
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const isLive = preset.dataMode === 'live'
   const report = preset.report
+  const representativeEvidence = preset.evidence.at(-1) ?? preset.evidence[0]
   const filteredEvidence = preset.evidence.filter(
     (item) =>
       (regionFilter === 'ALL' || item.region === regionFilter) &&
@@ -131,7 +133,7 @@ export function ReportDashboard({
           <div className="report-sidebar__intro">
             <span>REPORT INDEX</span>
             <strong>全球玩家洞察</strong>
-            <small>演示数据快照</small>
+            <small>{isLive ? '实时公开网页研究' : '演示数据快照'}</small>
           </div>
           <Tabs.List aria-label="报告章节">
             <Tabs.Trigger value="overview" aria-label="全球概览"><span>01</span>全球概览</Tabs.Trigger>
@@ -140,7 +142,7 @@ export function ReportDashboard({
             <Tabs.Trigger value="strategy" aria-label="策略建议"><span>04</span>策略建议</Tabs.Trigger>
           </Tabs.List>
           <div className="report-sidebar__meta">
-            <div><span>样本快照</span><strong>{report.sampleCount.toLocaleString('zh-CN')}</strong></div>
+            <div><span>{isLive ? '真实证据' : '样本快照'}</span><strong>{report.sampleCount.toLocaleString('zh-CN')}</strong></div>
             <div><span>来源类型</span><strong>{preset.sources.length}</strong></div>
             <div><span>核心市场</span><strong>{preset.regions.length}</strong></div>
           </div>
@@ -149,7 +151,7 @@ export function ReportDashboard({
             <span><small>ASK THE ADVISOR</small><strong>打开 AI 游戏顾问</strong></span>
             <ArrowRight size={16} />
           </button>
-          <p className="report-disclaimer">所有观点与计数均为透明标记的演示数据，不代表实时互联网采集。</p>
+          <p className="report-disclaimer">{isLive ? '真实研究：来源为本次任务检索到的公开网页/RSS；数字仅统计当前可核验证据，不代表全部玩家。' : '所有观点与计数均为透明标记的演示数据，不代表实时互联网采集。'}</p>
         </aside>
 
         <main className="report-canvas">
@@ -178,7 +180,7 @@ export function ReportDashboard({
           </section>
 
           <section className="report-kpis">
-            <div><span>讨论样本</span><strong>{report.sampleCount.toLocaleString('zh-CN')}</strong><small>跨 6 类公开来源</small></div>
+            <div><span>{isLive ? '公开证据' : '讨论样本'}</span><strong>{report.sampleCount.toLocaleString('zh-CN')}</strong><small>跨 {preset.sources.length} 类公开来源</small></div>
             <div className="kpi-positive"><span>正面情绪</span><strong>{report.positivePercent}%</strong><small><TrendUp size={12} /> 全球主导情绪</small></div>
             <div className="kpi-negative"><span>负面情绪</span><strong>{report.negativePercent}%</strong><small><TrendDown size={12} /> 需跟进的问题簇</small></div>
             <div><span>关键建议</span><strong>{report.recommendations.length}</strong><small>P0 / P1 / P2 优先级</small></div>
@@ -187,7 +189,7 @@ export function ReportDashboard({
           <Tabs.Content value="overview" className="report-tab-content">
             <div className="report-section-heading">
               <div><span>OVERVIEW</span><h2>全球情绪与信号概览</h2></div>
-              <small>从版本前 3 天到上线后 7 天</small>
+              <small>{isLive ? '本次实时检索结果 · 不外推总体玩家' : '从版本前 3 天到上线后 7 天'}</small>
             </div>
             <div className="overview-grid">
               <article className="report-card report-card--wide">
@@ -214,8 +216,8 @@ export function ReportDashboard({
               </article>
               <article className="report-card report-card--quote">
                 <Quotes size={23} />
-                <blockquote>{preset.evidence[8].excerptZh}</blockquote>
-                <footer><span>{preset.evidence[8].source} · {preset.evidence[8].region}</span><small>代表性观点 · 演示证据</small></footer>
+                <blockquote>{representativeEvidence?.excerptZh ?? '当前任务没有可展示的代表证据。'}</blockquote>
+                {representativeEvidence && <footer><span>{representativeEvidence.source} · {representativeEvidence.region}</span><small>代表性观点 · {isLive ? '实时公开网页' : '演示证据'}</small></footer>}
               </article>
             </div>
           </Tabs.Content>
@@ -227,25 +229,41 @@ export function ReportDashboard({
             </div>
             <div className="region-cards">
               {report.regions.map((region) => {
-                const evidence = preset.evidence.find((item) => item.region === region.region)!
+                const evidence = preset.evidence.find((item) => item.region === region.region)
                 return (
                   <article key={region.region}>
                     <header><span>{region.region}</span><h3>{region.label}玩家</h3><strong>{region.sentimentScore}</strong></header>
                     <div className="region-concerns"><span>首要关注 <b>{region.topConcern}</b></span><span>次要关注 <b>{region.secondaryConcern}</b></span></div>
                     <p>{region.insight}</p>
-                    <blockquote>{evidence.excerptZh}</blockquote>
-                    <footer>{evidence.source} · {evidence.language} · 演示证据</footer>
+                    {evidence ? <blockquote>{evidence.excerptZh}</blockquote> : <blockquote>当前地区没有检索到可核验公开证据。</blockquote>}
+                    <footer>{evidence ? `${evidence.source} · ${evidence.language} · ${isLive ? '实时公开网页' : '演示证据'}` : 'EVIDENCE GAP'}</footer>
                   </article>
                 )
               })}
             </div>
-            <article className="regional-matrix">
-              <header><span>地区关注点对照</span><small>议题强度由代表样本与聚合快照共同派生</small></header>
-              <div className="matrix-row matrix-head"><span>市场</span><span>角色价值</span><span>角色塑造</span><span>剧情世界观</span><span>本地化</span></div>
-              <div className="matrix-row"><strong>中国</strong><i style={{ width: '88%' }} /><i style={{ width: '54%' }} /><i style={{ width: '61%' }} /><i style={{ width: '44%' }} /></div>
-              <div className="matrix-row"><strong>日本</strong><i style={{ width: '49%' }} /><i style={{ width: '91%' }} /><i style={{ width: '66%' }} /><i style={{ width: '63%' }} /></div>
-              <div className="matrix-row"><strong>欧美</strong><i style={{ width: '58%' }} /><i style={{ width: '68%' }} /><i style={{ width: '92%' }} /><i style={{ width: '74%' }} /></div>
-            </article>
+            {isLive ? (
+              <article className="regional-matrix">
+                <header><span>地区证据覆盖与情绪构成</span><small>全部数值直接由本次真实证据条目计算</small></header>
+                <div className="matrix-row matrix-head"><span>市场</span><span>证据覆盖</span><span>正面</span><span>中性</span><span>负面</span></div>
+                {report.regions.map((region) => {
+                  const items = preset.evidence.filter((item) => item.region === region.region)
+                  const count = Math.max(items.length, 1)
+                  const coverage = report.sampleCount ? Math.round((items.length / report.sampleCount) * 100) : 0
+                  const positive = Math.round((items.filter((item) => item.sentiment === 'positive').length / count) * 100)
+                  const negative = Math.round((items.filter((item) => item.sentiment === 'negative').length / count) * 100)
+                  const neutral = items.length ? 100 - positive - negative : 0
+                  return <div className="matrix-row" key={region.region}><strong>{region.label}</strong><i title={`${coverage}%`} style={{ width: `${coverage}%` }} /><i title={`${positive}%`} style={{ width: `${positive}%` }} /><i title={`${neutral}%`} style={{ width: `${neutral}%` }} /><i title={`${negative}%`} style={{ width: `${negative}%` }} /></div>
+                })}
+              </article>
+            ) : (
+              <article className="regional-matrix">
+                <header><span>地区关注点对照</span><small>议题强度由代表样本与聚合快照共同派生</small></header>
+                <div className="matrix-row matrix-head"><span>市场</span><span>角色价值</span><span>角色塑造</span><span>剧情世界观</span><span>本地化</span></div>
+                <div className="matrix-row"><strong>中国</strong><i style={{ width: '88%' }} /><i style={{ width: '54%' }} /><i style={{ width: '61%' }} /><i style={{ width: '44%' }} /></div>
+                <div className="matrix-row"><strong>日本</strong><i style={{ width: '49%' }} /><i style={{ width: '91%' }} /><i style={{ width: '66%' }} /><i style={{ width: '63%' }} /></div>
+                <div className="matrix-row"><strong>欧美</strong><i style={{ width: '58%' }} /><i style={{ width: '68%' }} /><i style={{ width: '92%' }} /><i style={{ width: '74%' }} /></div>
+              </article>
+            )}
           </Tabs.Content>
 
           <Tabs.Content value="controversies" className="report-tab-content">
@@ -266,13 +284,15 @@ export function ReportDashboard({
               ))}
             </div>
             <div className="evidence-explorer">
-              <header><span><Database size={15} /> 证据浏览器</span><small>{filteredEvidence.length} 条代表性观点 · 全部为演示证据</small></header>
+              <header><span><Database size={15} /> 证据浏览器</span><small>{filteredEvidence.length} 条代表性观点 · {isLive ? '实时公开网页证据' : '全部为演示证据'}</small></header>
               <div className="evidence-grid">
                 {filteredEvidence.map((item) => (
                   <article key={item.id} className={highlightEvidenceId === item.id ? 'is-highlighted' : ''} id={`evidence-${item.id}`}>
-                    <header><span>{item.source}</span><i>{regionMap[item.region]} · {item.language}</i><small>演示证据</small></header>
+                    <header><span>{item.source}</span><i>{regionMap[item.region]} · {item.language}</i><small>{isLive ? '实时公开网页' : '演示证据'}</small></header>
+                    {isLive && item.title && <strong className="evidence-source-title">{item.title}</strong>}
                     <blockquote lang={item.language}>{item.excerptOriginal}</blockquote>
                     {item.language !== 'zh-CN' && <p>{item.excerptZh}</p>}
+                    {isLive && item.url && <code className="evidence-source-url">{item.url}</code>}
                     <footer><span className={`sentiment-${item.sentiment}`}>{sentimentLabel(item.sentiment)}</span>{item.topics.map((topic) => <i key={topic}>#{topic}</i>)}<small>{item.id}</small></footer>
                   </article>
                 ))}
@@ -315,7 +335,7 @@ export function ReportDashboard({
           <button className="timeline-backdrop" type="button" aria-label="关闭 Timeline" onClick={() => setTimelineOpen(false)} />
           <motion.aside initial={{ x: 460 }} animate={{ x: 0 }}>
             <header><div><span>MISSION REPLAY</span><h2>Agent Timeline 回顾</h2></div><button type="button" onClick={() => setTimelineOpen(false)} aria-label="关闭 Timeline"><X size={18} /></button></header>
-            <p>任务过程只读回顾 · 不重新播放或修改结果</p>
+            <p>任务过程只读回顾 · {isLive ? '事件来自真实检索与模型请求' : '不重新播放或修改结果'}</p>
             <div>{preset.events.map((event) => <article key={event.id}><time>+{String(Math.floor(event.offsetMs / 1000)).padStart(2, '0')}s</time><i /><div><span>{preset.agents.find((agent) => agent.id === event.agentId)?.name}</span><strong>{event.message}</strong></div></article>)}</div>
           </motion.aside>
         </div>

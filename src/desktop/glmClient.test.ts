@@ -21,6 +21,7 @@ describe('GLM desktop advisor client', () => {
       model: 'glm-5.2',
     })
     expect(getPublicGlmStatus(config)).not.toHaveProperty('keyFile')
+    expect(config.searchBaseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
 
     expect(() => createGlmRuntimeConfig({
       REHOYO_GLM_API_KEY_FILE: 'C:/secure/glm-key.txt',
@@ -80,6 +81,7 @@ describe('GLM desktop advisor client', () => {
       request: {
         question: '为什么欧美玩家不喜欢这个角色？',
         localAnswer: '宣传与体验存在落差。',
+        dataMode: 'live',
         evidence: [{
           id: 'gi-west-02',
           source: 'Reddit',
@@ -87,6 +89,8 @@ describe('GLM desktop advisor client', () => {
           excerptZh: '宣传呈现与实机体验存在落差。',
           sentiment: 'negative',
           topics: ['宣传落差'],
+          title: '真实 Reddit 讨论',
+          url: 'https://www.reddit.com/r/example/comments/real',
         }],
       },
       fetchImpl,
@@ -105,6 +109,8 @@ describe('GLM desktop advisor client', () => {
     const body = JSON.parse(String(init?.body))
     expect(body).toMatchObject({ model: 'glm-5.2', thinking: { type: 'disabled' }, stream: false })
     expect(body.messages.at(-1).content).toContain('gi-west-02')
+    expect(body.messages[0].content).toContain('实时检索到的公开网页')
+    expect(body.messages.at(-1).content).toContain('https://www.reddit.com/r/example/comments/real')
   })
 
   it('bounds and sanitizes renderer-supplied advisor context', () => {
