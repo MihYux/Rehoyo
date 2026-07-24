@@ -91,13 +91,13 @@ npm install
 npm run dev
 ```
 
-`npm run dev` 会打开 **Electron 桌面窗口**，不会自动打开浏览器。首次启动显示全屏连接页，粘贴 GLM API Key 与端点：
+`npm run dev` 会打开 **Electron 桌面窗口**，不会自动打开浏览器。只要本机尚未通过 App 保存有效连接，启动时就会显示全屏连接页，让用户输入 GLM API Key 与端点：
 
 ```text
 https://open.bigmodel.cn/api/coding/paas/v4
 ```
 
-API Key 由 Electron 主进程使用 `safeStorage` 通过 Windows DPAPI、macOS Keychain 或 Linux libsecret 加密保存。密钥不会进入渲染进程、`localStorage`、日志或 Git；安全存储不可用时只保存在主进程内存，不降级为明文。
+API Key 由 Electron 主进程使用 `safeStorage` 通过 Windows DPAPI、macOS Keychain 或 Linux libsecret 加密保存。密钥不会进入渲染进程、`localStorage`、日志或 Git；安全存储不可用时只保存在主进程内存，不降级为明文。项目目录中的本地文件不会被隐式读取为连接配置；开发者如需外部注入，必须显式使用以下环境变量或启动参数。
 
 开发环境也可使用仓库外部密钥文件：
 

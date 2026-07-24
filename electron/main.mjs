@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -30,13 +29,8 @@ const rendererUrl = developmentUrl || pathToFileURL(rendererFile).href
 
 let launchGlmConfig
 try {
-  const localConfigPath = path.join(appRoot, '.rehoyo-live.json')
-  const localConfigDisabled = process.env.REHOYO_DISABLE_LOCAL_CONFIG === '1'
-  const launchArguments = localConfigDisabled || process.argv.some((argument) => argument.startsWith('--rehoyo-glm-config=')) || !existsSync(localConfigPath)
-    ? process.argv
-    : [...process.argv, `--rehoyo-glm-config=${localConfigPath}`]
   launchGlmConfig = createGlmRuntimeConfig({
-    ...readGlmLaunchEnvironment(launchArguments),
+    ...readGlmLaunchEnvironment(process.argv),
     ...process.env,
   })
 } catch (error) {
