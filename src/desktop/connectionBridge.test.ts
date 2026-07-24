@@ -50,6 +50,7 @@ describe('secure dual-provider connection IPC bridge', () => {
       'rehoyo:connection:save',
       'rehoyo:connection:clear',
       'rehoyo:connection:invalidate',
+      'rehoyo:connection:status-changed',
     ]) {
       expect(mainSource).toContain(channel)
       expect(preloadSource).toContain(channel)

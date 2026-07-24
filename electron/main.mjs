@@ -56,6 +56,10 @@ let researchHistoryStore = null
 let ipcRegistered = false
 const activeAdvisorStreams = new Map()
 const activeResearchRuns = new Set()
+const connectionWaiters = {
+  ai: new Set(),
+  search: new Set(),
+}
 
 function advisorStreamKey(senderId, requestId) {
   return `${senderId}:${requestId}`
@@ -63,6 +67,39 @@ function advisorStreamKey(senderId, requestId) {
 
 function sendAdvisorEvent(sender, payload) {
   if (!sender.isDestroyed()) sender.send('rehoyo:advisor:event', payload)
+}
+
+function sendConnectionStatus(status, sender = mainWindow?.webContents) {
+  if (sender && !sender.isDestroyed()) sender.send('rehoyo:connection:status-changed', status)
+}
+
+function resolveConnectionWaiters(status) {
+  for (const provider of ['ai', 'search']) {
+    if (!status?.[provider]?.configured) continue
+    for (const waiter of connectionWaiters[provider]) waiter.resolve()
+    connectionWaiters[provider].clear()
+  }
+}
+
+async function waitForProviderReauthentication(provider, sender) {
+  const connectionProvider = provider === 'openai' ? 'search' : 'ai'
+  const status = await connectionManager.invalidate(connectionProvider)
+  sendConnectionStatus(status, sender)
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve: () => {
+        sender.removeListener('destroyed', handleDestroyed)
+        resolve()
+      },
+      reject,
+    }
+    const handleDestroyed = () => {
+      connectionWaiters[connectionProvider].delete(waiter)
+      reject(new DOMException('Research window closed during reauthentication.', 'AbortError'))
+    }
+    connectionWaiters[connectionProvider].add(waiter)
+    sender.once('destroyed', handleDestroyed)
+  })
 }
 
 function currentGlmConfig() {
@@ -90,9 +127,22 @@ function registerIpcHandlers() {
   ipcRegistered = true
 
   ipcMain.handle('rehoyo:connection:status', () => connectionManager.getStatus())
-  ipcMain.handle('rehoyo:connection:save', async (_event, input) => connectionManager.save(input))
-  ipcMain.handle('rehoyo:connection:clear', async (_event, provider) => connectionManager.clear(provider))
-  ipcMain.handle('rehoyo:connection:invalidate', async (_event, provider) => connectionManager.invalidate(provider))
+  ipcMain.handle('rehoyo:connection:save', async (event, input) => {
+    const status = await connectionManager.save(input)
+    resolveConnectionWaiters(status)
+    sendConnectionStatus(status, event.sender)
+    return status
+  })
+  ipcMain.handle('rehoyo:connection:clear', async (event, provider) => {
+    const status = await connectionManager.clear(provider)
+    sendConnectionStatus(status, event.sender)
+    return status
+  })
+  ipcMain.handle('rehoyo:connection:invalidate', async (event, provider) => {
+    const status = await connectionManager.invalidate(provider)
+    sendConnectionStatus(status, event.sender)
+    return status
+  })
 
   ipcMain.handle('rehoyo:advisor:status', () => getPublicGlmStatus(currentGlmConfig()))
   ipcMain.handle('rehoyo:advisor:ask', async (_event, input) => {
@@ -203,6 +253,7 @@ function registerIpcHandlers() {
         request,
         getApiKey: () => connectionManager.getApiKey('ai'),
         getSearchApiKey: () => connectionManager.getApiKey('search'),
+        waitForReauthentication: (provider) => waitForProviderReauthentication(provider, event.sender),
         runSeed: runId,
         ragStore: localRagStore,
         historyStore: researchHistoryStore,

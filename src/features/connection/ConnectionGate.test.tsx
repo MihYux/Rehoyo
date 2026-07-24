@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectionClient, ConnectionStatus } from '../../desktop/bridge'
@@ -9,7 +9,10 @@ const searchEndpoint = 'https://api.openai.com/v1'
 
 function providerStatus(configured: boolean, provider: 'bigmodel'): ConnectionStatus['ai']
 function providerStatus(configured: boolean, provider: 'openai'): ConnectionStatus['search']
-function providerStatus(configured: boolean, provider: 'bigmodel' | 'openai') {
+function providerStatus(
+  configured: boolean,
+  provider: 'bigmodel' | 'openai',
+): ConnectionStatus['ai'] | ConnectionStatus['search'] {
   if (provider === 'bigmodel') {
     return {
       configured, provider, endpoint: aiEndpoint, model: 'glm-5.2' as const,
@@ -149,5 +152,38 @@ describe('dual-provider first-run connection gate', () => {
 
     expect(await screen.findByRole('heading', { name: '任务大厅' })).toBeVisible()
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('仅本次会话有效'))
+  })
+
+  it('reopens only the invalid provider while a running task waits for reauthentication', async () => {
+    let statusListener: ((next: ConnectionStatus) => void) | undefined
+    const ready = status({
+      configured: true,
+      ai: providerStatus(true, 'bigmodel'),
+      search: providerStatus(true, 'openai'),
+      missing: [],
+    })
+    installConnectionClient({
+      getStatus: vi.fn(async () => ready),
+      save: vi.fn(),
+      clear: vi.fn(),
+      invalidate: vi.fn(),
+      onStatus: vi.fn((listener) => {
+        statusListener = listener
+        return () => { statusListener = undefined }
+      }),
+    })
+
+    render(<ConnectionGate><h1>正在运行的研究任务</h1></ConnectionGate>)
+    expect(await screen.findByRole('heading', { name: '正在运行的研究任务' })).toBeVisible()
+
+    act(() => statusListener?.(status({
+      ai: providerStatus(true, 'bigmodel'),
+      search: providerStatus(false, 'openai'),
+      missing: ['search.apiKey'],
+    })))
+
+    expect(await screen.findByLabelText('OpenAI API Key')).toBeVisible()
+    expect(screen.queryByLabelText('BigModel API Key')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '正在运行的研究任务' })).not.toBeInTheDocument()
   })
 })

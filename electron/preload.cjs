@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld('rehoyoDesktop', Object.freeze({
     save: (input) => ipcRenderer.invoke('rehoyo:connection:save', input),
     clear: (provider) => ipcRenderer.invoke('rehoyo:connection:clear', provider),
     invalidate: (provider) => ipcRenderer.invoke('rehoyo:connection:invalidate', provider),
+    onStatus: (listener) => {
+      if (typeof listener !== 'function') return () => {}
+      const handler = (_event, status) => listener(status)
+      ipcRenderer.on('rehoyo:connection:status-changed', handler)
+      return () => ipcRenderer.removeListener('rehoyo:connection:status-changed', handler)
+    },
   }),
   advisor: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:advisor:status'),

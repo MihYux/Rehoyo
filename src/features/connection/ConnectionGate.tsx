@@ -44,6 +44,12 @@ export function ConnectionGate({ children }: PropsWithChildren) {
       return () => { active = false }
     }
 
+    const unsubscribe = client.onStatus?.((status) => {
+      if (!active) return
+      setConnectionStatus(status)
+      setError('')
+      setPhase(status.configured ? 'ready' : 'required')
+    })
     client.getStatus()
       .then((status) => {
         if (!active) return
@@ -54,7 +60,10 @@ export function ConnectionGate({ children }: PropsWithChildren) {
         if (active) setPhase('unavailable')
       })
 
-    return () => { active = false }
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
   }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

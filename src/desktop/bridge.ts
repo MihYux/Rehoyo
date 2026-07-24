@@ -34,6 +34,7 @@ export interface ConnectionClient {
   save: (input: { ai?: ProviderConnectionInput; search?: ProviderConnectionInput }) => Promise<ConnectionStatus>
   clear: (provider?: ConnectionProvider) => Promise<ConnectionStatus>
   invalidate: (provider: ConnectionProvider) => Promise<ConnectionStatus>
+  onStatus?: (listener: (status: ConnectionStatus) => void) => () => void
 }
 
 export interface LiveAdvisorRequest {
