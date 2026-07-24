@@ -1,7 +1,7 @@
 import { ArrowLeft, Browser, CircleNotch, Database, GlobeHemisphereWest, WarningCircle } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrandMark } from '../../components/BrandMark'
-import { getLiveResearchClient } from '../../desktop/bridge'
+import { getLiveResearchClient, type LiveResearchResult } from '../../desktop/bridge'
 import type { AnalysisEvent, AnalysisPreset, EvidenceRecord } from '../../domain/types'
 import type { ReleaseProject, ReleaseRegion } from '../../domain/release-project'
 
@@ -18,19 +18,19 @@ export function RegionalAnalysisRun({ project, onComplete }: Props) {
   const [evidence, setEvidence] = useState<EvidenceRecord[]>([])
   const [error, setError] = useState('')
   const [running, setRunning] = useState(true)
-  const started = useRef(false)
+  const runPromise = useRef<Promise<LiveResearchResult> | null>(null)
   const runId = useMemo(() => `${project.id}-${Date.now()}`, [project.id])
 
   useEffect(() => {
-    if (started.current) return
-    started.current = true
     const client = getLiveResearchClient()
     if (!client) {
       setError('真实研究只可在ReHoYo Electron桌面应用中运行。')
       setRunning(false)
       return
     }
+    let active = true
     const unsubscribe = client.onEvent((payload) => {
+      if (!active) return
       if (payload.runId !== runId) return
       setEvents((current) => [...current, payload.event])
       if (payload.event.evidenceRecords?.length) {
@@ -41,19 +41,26 @@ export function RegionalAnalysisRun({ project, onComplete }: Props) {
         })
       }
     })
-    client.run({ runId, gameName: project.game, versionLabel: project.version, versionTitle: project.updateName, regions: project.regions })
+    if (!runPromise.current) {
+      runPromise.current = client.run({ runId, gameName: project.game, versionLabel: project.version, versionTitle: project.updateName, regions: project.regions })
+    }
+    runPromise.current
       .then((result) => {
+        if (!active) return
         if (!result.ok) throw new Error(result.error)
         setEvidence(result.preset.evidence)
         setRunning(false)
         onComplete(result.preset)
       })
       .catch((runError) => {
+        if (!active) return
         setError(runError instanceof Error ? runError.message : '区域研究失败。')
         setRunning(false)
       })
-      .finally(unsubscribe)
-    return unsubscribe
+    return () => {
+      active = false
+      unsubscribe()
+    }
   }, [onComplete, project.game, project.regions, project.updateName, project.version, runId])
 
   const latest = events.at(-1)
