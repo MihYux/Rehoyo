@@ -95,14 +95,14 @@ function createResearchTarget(
 
 export const analysisPresets: AnalysisPreset[] = [
   createResearchTarget(
-    'genshin-5-0',
-    { id: 'genshin', name: '原神', shortName: 'GI', accent: '#278fb9' },
-    { id: '5-0', label: '5.0', title: '荣花与炎日之途' },
-  ),
-  createResearchTarget(
     'star-rail-2-0',
     { id: 'star-rail', name: '崩坏：星穹铁道', shortName: 'HSR', accent: '#7868c7' },
     { id: '2-0', label: '2.0', title: '假如在午夜入梦' },
+  ),
+  createResearchTarget(
+    'genshin-5-0',
+    { id: 'genshin', name: '原神', shortName: 'GI', accent: '#278fb9' },
+    { id: '5-0', label: '5.0', title: '荣花与炎日之途' },
   ),
   createResearchTarget(
     'zzz-1-1',

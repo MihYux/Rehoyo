@@ -4,8 +4,8 @@ import { analysisPresets, createCustomPreset } from './presets'
 describe('real research targets', () => {
   it('provides three flagship targets without bundled player claims', () => {
     expect(analysisPresets.map((preset) => preset.game.name)).toEqual([
-      '原神',
       '崩坏：星穹铁道',
+      '原神',
       '绝区零',
     ])
 

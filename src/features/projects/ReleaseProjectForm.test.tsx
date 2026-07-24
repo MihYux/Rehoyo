@@ -9,7 +9,10 @@ describe('release project brief', () => {
     const onCreate = vi.fn()
     render(<ReleaseProjectForm onCreate={onCreate} />)
 
-    expect(screen.getAllByRole('button', { name: /选择游戏/ })).toHaveLength(3)
+    const gameOptions = screen.getAllByRole('button', { name: /选择游戏/ })
+    expect(gameOptions).toHaveLength(3)
+    expect(gameOptions[0]).toHaveAccessibleName('选择游戏 崩坏：星穹铁道')
+    expect(gameOptions[0]).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('status')).toHaveTextContent('评委演示预设已填好')
     expect(screen.getByLabelText('版本号')).toHaveValue('2.0')
     expect(screen.getByLabelText('预计上线日期')).toHaveValue('2024-02-06')

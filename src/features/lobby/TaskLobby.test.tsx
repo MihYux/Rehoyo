@@ -25,7 +25,7 @@ describe('TaskLobby', () => {
 
     expect(screen.getByRole('img', { name: 'ReHoYo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /原神/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /崩坏：星穹铁道/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /崩坏：星穹铁道/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /绝区零/ })).toBeInTheDocument()
     expect(screen.queryByText(/确定性演示快照/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '真实研究未配置' })).toBeDisabled()
@@ -42,7 +42,7 @@ describe('TaskLobby', () => {
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       dataMode: 'live',
-      game: expect.objectContaining({ name: '原神' }),
+      game: expect.objectContaining({ name: '崩坏：星穹铁道' }),
       evidence: [],
     }))
   })

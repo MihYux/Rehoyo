@@ -28,15 +28,15 @@ interface DemoBriefPreset {
 
 const demoBriefPresets: DemoBriefPreset[] = [
   {
-    game: '原神', code: 'GI', version: '5.0', releaseAt: '2024-08-28', updateName: '荣花与炎日之途',
-    objective: 'activity', pointType: 'map', sellingPointName: '纳塔全新区域与角色故事',
-    sellingPointDescription: '围绕纳塔新区域、探索体验与已公开角色内容建立全球发行主轴，并根据真实区域讨论调整表达。',
-    assets: ['版本PV', 'KV', '角色设定与审核模板'], budgetLevel: 'medium', riskPreference: 'balanced', allowCharacter: true,
-  },
-  {
     game: '崩坏：星穹铁道', code: 'HSR', version: '2.0', releaseAt: '2024-02-06', updateName: '假如在午夜入梦',
     objective: 'recall', pointType: 'character', sellingPointName: '黑天鹅与匹诺康尼故事',
     sellingPointDescription: '围绕匹诺康尼世界观、黑天鹅角色内容与已公开剧情信息建立版本发行主轴。',
+    assets: ['版本PV', 'KV', '角色设定与审核模板'], budgetLevel: 'medium', riskPreference: 'balanced', allowCharacter: true,
+  },
+  {
+    game: '原神', code: 'GI', version: '5.0', releaseAt: '2024-08-28', updateName: '荣花与炎日之途',
+    objective: 'activity', pointType: 'map', sellingPointName: '纳塔全新区域与角色故事',
+    sellingPointDescription: '围绕纳塔新区域、探索体验与已公开角色内容建立全球发行主轴，并根据真实区域讨论调整表达。',
     assets: ['版本PV', 'KV', '角色设定与审核模板'], budgetLevel: 'medium', riskPreference: 'balanced', allowCharacter: true,
   },
   {
@@ -47,7 +47,7 @@ const demoBriefPresets: DemoBriefPreset[] = [
   },
 ]
 
-const defaultPreset = demoBriefPresets[1]
+const defaultPreset = demoBriefPresets.find((preset) => preset.code === 'HSR') ?? demoBriefPresets[0]
 
 const objectiveLabels: Record<Objective, string> = {
   acquisition: '获取新增玩家', activity: '提升版本活跃', recall: '召回流失玩家', revenue: '支持营收目标',
@@ -177,7 +177,7 @@ export function ReleaseProjectForm({ onCreate }: Props) {
               {!showCustom && <button type="button" onClick={() => applyDemoPreset(demoBriefPresets.find((preset) => preset.game === game) ?? defaultPreset)}>恢复预设</button>}
             </div>
             <fieldset className="brief-game-options"><legend>游戏</legend>
-              {demoBriefPresets.map((preset) => <button type="button" key={preset.game} className={!showCustom && game === preset.game ? 'is-selected' : ''} aria-label={`选择游戏 ${preset.game}`} onClick={() => applyDemoPreset(preset)}><span>{preset.code}</span><strong>{preset.game}</strong><small>{preset.version} · {preset.updateName}</small>{!showCustom && game === preset.game && <Check size={16} />}</button>)}
+              {demoBriefPresets.map((preset) => <button type="button" key={preset.game} className={!showCustom && game === preset.game ? 'is-selected' : ''} aria-label={`选择游戏 ${preset.game}`} aria-pressed={!showCustom && game === preset.game} onClick={() => applyDemoPreset(preset)}><span>{preset.code}</span><strong>{preset.game}</strong><small>{preset.version} · {preset.updateName}</small>{!showCustom && game === preset.game && <Check size={16} />}</button>)}
             </fieldset>
             <button className="brief-text-link" type="button" onClick={() => showCustom ? applyDemoPreset(defaultPreset) : useCustomGame()}>{showCustom ? '使用演示预设' : '输入其他游戏'}</button>
             {showCustom && <label className="brief-field"><span>自定义游戏名称</span><input value={customGame} onChange={(event) => setCustomGame(event.target.value)} placeholder="输入游戏名称" /></label>}
