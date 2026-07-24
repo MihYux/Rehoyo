@@ -36,7 +36,7 @@ export interface AnalysisEvent {
   offsetMs: number
   agentId: AgentId
   phase: AnalysisPhase
-  kind: 'status' | 'source' | 'finding' | 'handoff' | 'complete' | 'risk'
+  kind: 'status' | 'source' | 'finding' | 'handoff' | 'complete' | 'risk' | 'browser' | 'rag'
   message: string
   evidenceIds: string[]
   progress: number
@@ -48,6 +48,14 @@ export interface AnalysisEvent {
   query?: string
   sitesAttempted?: number
   evidenceCount?: number
+  browserUrl?: string
+  browserTitle?: string
+  browserStatus?: 'navigating' | 'completed' | 'challenge_waiting' | 'failed'
+  browserPreview?: string
+  ragHits?: number
+  ragDocuments?: number
+  ragChunks?: number
+  wikiDocuments?: number
 }
 
 export interface EvidenceRecord {
@@ -161,6 +169,10 @@ export interface AnalysisPreset {
     attempts: number
     providers: string[]
     targetReached: boolean
+    wikiDocuments?: number
+    browserPagesObserved?: number
+    ragDocuments?: number
+    ragChunks?: number
   }
 }
 

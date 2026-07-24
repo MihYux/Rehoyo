@@ -52,6 +52,17 @@ ReHoYo 的主流程只保留四个阶段：
 - HoYoPlay 只作为官方版本上下文，不混入玩家情绪样本。
 - 页面数量代表本次成功检索并通过过滤的公开记录，不代表统计抽样或全部玩家。
 
+### 无头网页观察、Wiki 与本地 RAG
+
+检索命中后，Electron 主进程会继续完成以下真实处理链路：
+
+1. Playwright 以 `headless: true` 启动 Chromium，在后台并行打开公开 HTTPS 页面并提取用户可见正文；运行页会实时显示“访问中 / 已提取 / 等待验证 / 失败”。
+2. MediaWiki API 同时检索中英文 Wikipedia 与对应游戏 Wiki，补充角色、地点和版本背景。
+3. 玩家页面与 Wiki 页面写入用户数据目录中的 `rehoyo-research.sqlite`，按约 900 字符切块建立本地检索索引。
+4. 情绪、地区与策略 Agent 分别从本地 RAG 取回相关片段，再与带证据编号的玩家样本一同分析。
+
+RAG 对资料角色做强隔离：`role=player` 才能支持玩家情绪、争议和策略；`role=context` 的 Wiki 只解释“玩家正在谈论的对象”，不会计入评论数、地区样本或情绪百分比。数据库保留在本机 Electron 用户数据目录，不上传到仓库。遇到验证码或 Turnstile 时页面会停在“等待验证”，程序不会绕过验证。
+
 ## 发行决策模型
 
 版本 Brief 与玩家证据在领域模型中分开保存：
@@ -156,6 +167,9 @@ electron/
 ├── main.mjs                 Electron 生命周期、安全 IPC 与研究任务
 ├── research-client.mjs      37 来源、自适应检索和 Agent 分析
 ├── research-client.d.mts    研究运行时类型契约
+├── headless-research-browser.mjs  Playwright 后台页面观察与正文提取
+├── wiki-context.mjs         Wikipedia / 游戏 Wiki 背景资料采集
+├── local-rag-store.mjs      本地 SQLite 文档、分块与检索
 ├── glm-client.mjs           GLM 请求与流式顾问
 └── connection-manager.mjs   OS 级加密凭据管理
 

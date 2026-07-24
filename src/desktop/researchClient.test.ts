@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { AnalysisEvent } from '../domain/types'
 import {
   LIVE_SOURCE_CATALOG,
   applySentimentAnalysis,
@@ -377,12 +378,7 @@ describe('live research agent orchestration', () => {
     let redditUrl = ''
     let sentimentSystem = ''
     let strategyPayload: Record<string, unknown> = {}
-    const events: Array<{
-      agentId: string
-      kind: string
-      message: string
-      evidenceRecords?: Array<{ id: string; confidence: number }>
-    }> = []
+    const events: AnalysisEvent[] = []
     const redditAtom = `<?xml version="1.0"?><feed>
       <entry><title>Natlan exploration feels fresh</title><author><name>player_one</name></author>
       <link href="https://www.reddit.com/r/Genshin_Impact/comments/real1/natlan_feedback/" />
@@ -472,7 +468,7 @@ describe('live research agent orchestration', () => {
       getStats: vi.fn(() => ({ documents: indexedDocuments.length, contextDocuments: 1, playerDocuments: 3, chunks: indexedDocuments.length * 2 })),
       retrieve: vi.fn(() => [{ documentId: 'wiki-ctx-1', role: 'context', source: 'Wikipedia', region: 'GLOBAL', language: 'zh-CN', title: '纳塔', url: 'https://zh.wikipedia.org/wiki/Natlan', content: '纳塔是版本背景地点。', retrievedAt: '2024-08-14T00:00:00.000Z', score: 3 }]),
     }
-    const browserObserve = vi.fn(async (targets) => targets.map((target) => ({ ...target, title: target.title || target.source, text: target.role === 'context' ? '纳塔是版本背景地点。' : '玩家公开页面的完整可见正文。', retrievedAt: '2024-08-14T00:00:00.000Z' })))
+    const browserObserve = vi.fn(async (targets: Array<{ id: string; role: string; source: string; title?: string; url: string; region: string; language: string }>) => targets.map((target) => ({ ...target, role: target.role as 'player' | 'context', title: target.title || target.source, text: target.role === 'context' ? '纳塔是版本背景地点。' : '玩家公开页面的完整可见正文。', retrievedAt: '2024-08-14T00:00:00.000Z' })))
     const preset = await runLiveResearch({
       config: {
         baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
@@ -495,11 +491,11 @@ describe('live research agent orchestration', () => {
       ragStore,
       createResearchBrowser: ({ onObservation }) => ({
         observe: async (targets) => {
-          targets.forEach((target) => onObservation({ ...target, status: 'completed', title: target.title || target.source, textPreview: '已提取公开页面正文' }))
+          targets.forEach((target) => onObservation({ ...target, runId: 'test-run', agentId: 'research', status: 'completed', title: target.title || target.source, textPreview: '已提取公开页面正文' }))
           return browserObserve(targets)
         },
       }),
-      collectWikiContextImpl: vi.fn(async () => [{ id: 'wiki-ctx-1', role: 'context', source: 'Wikipedia', region: 'GLOBAL', language: 'zh-CN', title: '纳塔', url: 'https://zh.wikipedia.org/wiki/Natlan', text: '纳塔是版本背景地点。', retrievedAt: '2024-08-14T00:00:00.000Z' }]),
+      collectWikiContextImpl: vi.fn(async () => [{ id: 'wiki-ctx-1', role: 'context' as const, source: 'Wikipedia', region: 'GLOBAL' as const, language: 'zh-CN', title: '纳塔', url: 'https://zh.wikipedia.org/wiki/Natlan', text: '纳塔是版本背景地点。', retrievedAt: '2024-08-14T00:00:00.000Z' }]),
     })
 
     const lastRetrievalIndex = Math.max(...calls.map((call, index) => call.startsWith('retrieve:') ? index : -1))

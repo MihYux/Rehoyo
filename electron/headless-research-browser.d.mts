@@ -31,6 +31,11 @@ export interface ObservedResearchDocument extends ResearchBrowserTarget {
 }
 
 export function validatePublicHttpsUrl(value: unknown): string
-export function createHeadlessResearchBrowser(options?: Record<string, unknown>): {
+export function createHeadlessResearchBrowser(options?: {
+  browserType?: { launch(options: Record<string, unknown>): Promise<any> }
+  onObservation?: (observation: ResearchBrowserObservation) => void
+  maxConcurrency?: number
+  navigationTimeoutMs?: number
+}): {
   observe(targets: ResearchBrowserTarget[], context?: { runId?: string; agentId?: string }): Promise<ObservedResearchDocument[]>
 }

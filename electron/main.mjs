@@ -18,6 +18,8 @@ import {
   streamGlmAdvisor,
 } from './glm-client.mjs'
 import { runLiveResearch, sanitizeResearchRequest } from './research-client.mjs'
+import { createHeadlessResearchBrowser } from './headless-research-browser.mjs'
+import { createLocalRagStore } from './local-rag-store.mjs'
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(electronDirectory, '..')
@@ -40,6 +42,7 @@ try {
 
 let mainWindow = null
 let connectionManager = null
+let localRagStore = null
 let ipcRegistered = false
 const activeAdvisorStreams = new Map()
 const activeResearchRuns = new Set()
@@ -178,6 +181,8 @@ function registerIpcHandlers() {
         request,
         getApiKey: () => connectionManager.getApiKey(),
         runSeed: runId,
+        ragStore: localRagStore,
+        createResearchBrowser: (options) => createHeadlessResearchBrowser(options),
         onEvent: (researchEvent) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send('rehoyo:research:event', { runId, event: researchEvent })
@@ -229,6 +234,7 @@ app.whenReady().then(async () => {
       : undefined,
   })
   await connectionManager.initialize()
+  localRagStore = createLocalRagStore({ dbPath: path.join(app.getPath('userData'), 'rehoyo-research.sqlite') })
   registerIpcHandlers()
   await createMainWindow()
 
@@ -239,4 +245,9 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  localRagStore?.close()
+  localRagStore = null
 })

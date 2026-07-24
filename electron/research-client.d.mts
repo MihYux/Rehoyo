@@ -1,5 +1,7 @@
 import type { AnalysisEvent, AnalysisPreset, EvidenceRecord, RegionCode } from '../src/domain/types.js'
 import type { GlmRuntimeConfig } from './glm-client.mjs'
+import type { ResearchBrowserObservation, ResearchBrowserTarget, ObservedResearchDocument } from './headless-research-browser.mjs'
+import type { WikiContextDocument } from './wiki-context.mjs'
 
 export interface LiveResearchRequest {
   gameName: string
@@ -155,7 +157,19 @@ export function runLiveResearch(options: {
     maxEvidence?: number
     concurrency?: number
     providers?: ResearchProvider[]
+    browserConcurrency?: number
+    browserPlayerPages?: number
   }
+  ragStore?: {
+    indexDocuments(input: { runId: string; game: string; version: string; documents: Array<Record<string, unknown>> }): { indexed: number } | void
+    getStats(runId: string): { documents: number; contextDocuments: number; playerDocuments: number; chunks: number }
+    retrieve(query: string, options: { runId: string; roles: Array<'player' | 'context'>; limit: number }): Array<Record<string, unknown>>
+  }
+  createResearchBrowser?: (options: {
+    maxConcurrency: number
+    onObservation: (observation: ResearchBrowserObservation) => void
+  }) => { observe(targets: ResearchBrowserTarget[], context: { runId: string; agentId: string }): Promise<ObservedResearchDocument[]> }
+  collectWikiContextImpl?: (options: Record<string, unknown>) => Promise<WikiContextDocument[]>
 }): Promise<AnalysisPreset>
 
 export const LIVE_SEARCH_BASE_URL: string
