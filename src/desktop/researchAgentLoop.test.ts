@@ -15,17 +15,35 @@ function evidence(id: string) {
   }
 }
 
+function toolMessage(name: string, args: Record<string, unknown>) {
+  return {
+    tool_calls: [{
+      id: `call-${name}`,
+      type: 'function',
+      function: { name, arguments: JSON.stringify(args) },
+    }],
+  }
+}
+
 describe('AI-directed regional research loop', () => {
-  it('lets the model change provider and query after observing sparse results', async () => {
+  it('lets the model change its localized query after observing sparse results', async () => {
     const decisions = [
-      { type: 'search_web', provider: 'brave', query: '崩壊スターレイル 2.0 感想', language: 'ja-JP' },
-      { type: 'search_web', provider: 'bigmodel', query: 'ピノコニー プレイヤー 評価', language: 'ja-JP' },
-      { type: 'finish_region', reason: '地域サンプル目標を達成' },
+      toolMessage('search_web', {
+        query: '崩壊スターレイル 2.0 感想',
+        language: 'ja-JP',
+        purpose: '最初の日本プレイヤー反応を探す',
+      }),
+      toolMessage('search_web', {
+        query: 'ピノコニー プレイヤー 評価',
+        language: 'ja-JP',
+        purpose: '別の語彙で日本プレイヤー反応を探す',
+      }),
+      toolMessage('finish_region', { reason: '地域サンプル目標を達成' }),
     ]
-    const model = { nextAction: vi.fn(async (_context: Record<string, unknown>) => decisions.shift()) }
-    const searchWeb = vi.fn(async (action) => ({
-      evidence: action.provider === 'brave' ? [] : [evidence('sm-1'), evidence('sm-2')],
-      inspected: [{ id: `attempt-${action.provider}`, status: 'completed', region: 'JP', url: `https://${action.provider}.example/result` }],
+    const model = { nextAction: vi.fn(async (_context: unknown) => decisions.shift()) }
+    const searchWeb = vi.fn(async (_action) => ({
+      evidence: searchWeb.mock.calls.length === 1 ? [] : [evidence('sm-1'), evidence('sm-2')],
+      inspected: [{ id: `attempt-${searchWeb.mock.calls.length}`, status: 'completed', region: 'JP', url: `https://source-${searchWeb.mock.calls.length}.example/result` }],
     }))
 
     const result = await runRegionalResearchAgent({
@@ -36,9 +54,9 @@ describe('AI-directed regional research loop', () => {
       tools: { searchWeb },
     })
 
-    expect(searchWeb.mock.calls.map(([action]) => [action.provider, action.query])).toEqual([
-      ['brave', '崩壊スターレイル 2.0 感想'],
-      ['bigmodel', 'ピノコニー プレイヤー 評価'],
+    expect(searchWeb.mock.calls.map(([action]) => action.query)).toEqual([
+      '崩壊スターレイル 2.0 感想',
+      'ピノコニー プレイヤー 評価',
     ])
     const secondContext = model.nextAction.mock.calls[1]?.[0] as { history: Array<Record<string, unknown>> }
     expect(secondContext.history[0]).toMatchObject({ result: { evidenceAdded: 0 } })
@@ -48,9 +66,13 @@ describe('AI-directed regional research loop', () => {
 
   it('rejects an early finish action and continues until the regional quota is real', async () => {
     const decisions = [
-      { type: 'finish_region', reason: '提前完成' },
-      { type: 'search_web', provider: 'brave', query: 'HSR 2.0 player comments', language: 'ja-JP' },
-      { type: 'finish_region', reason: '已取得真实样本' },
+      toolMessage('finish_region', { reason: '提前完成' }),
+      toolMessage('search_web', {
+        query: 'HSR 2.0 player comments',
+        language: 'ja-JP',
+        purpose: '寻找真实玩家评论',
+      }),
+      toolMessage('finish_region', { reason: '已取得真实样本' }),
     ]
     const events: Array<{ kind: string; message: string }> = []
     const result = await runRegionalResearchAgent({
@@ -67,7 +89,11 @@ describe('AI-directed regional research loop', () => {
   })
 
   it('blocks repeated actions instead of looping forever', async () => {
-    const repeated = { type: 'search_web', provider: 'brave', query: 'same query', language: 'ja-JP' }
+    const repeated = toolMessage('search_web', {
+      query: 'same query',
+      language: 'ja-JP',
+      purpose: 'find comments',
+    })
     await expect(runRegionalResearchAgent({
       region: 'JP',
       request: { gameName: '崩坏：星穹铁道', versionLabel: '2.0', versionTitle: '假如在午夜入梦' },
