@@ -136,9 +136,15 @@ test('runs the four-stage release decision workflow without overlapping primary 
   expect(browserErrors).toEqual([])
 })
 
-test('keeps required version facts explicit before research starts', async ({ page }) => {
+test('prefills the complete judge demo before research starts', async ({ page }) => {
   await page.getByRole('button', { name: /创建版本发行项目/ }).click()
+  await expect(page.getByRole('status')).toContainText('评委演示预设已填好')
+  await expect(page.getByLabel('版本号')).toHaveValue('2.0')
+  await expect(page.getByLabel('预计上线日期')).toHaveValue('2024-02-06')
+  await expect(page.getByLabel('更新名称')).toHaveValue('假如在午夜入梦')
+  await expect(page.getByLabel('核心卖点名称')).toHaveValue('黑天鹅与匹诺康尼故事')
+  await expect(page.getByLabel('版本PV')).toBeChecked()
+  await expect(page.getByLabel('允许角色关系发行灰度预演')).toBeChecked()
   await page.getByRole('button', { name: /开始区域研究/ }).click()
-  await expect(page).toHaveURL(/projects\/new/)
-  await expect(page.getByLabel('版本号')).toBeFocused()
+  await expect(page.getByRole('heading', { name: 'Agent正在理解不同区域。' })).toBeVisible()
 })
