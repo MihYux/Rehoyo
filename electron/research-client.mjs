@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises'
+import { jsonrepair } from 'jsonrepair'
+import { collectWikiContext } from './wiki-context.mjs'
 
 const SEARCH_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const NICONICO_SNAPSHOT_URL = 'https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search'
@@ -720,12 +722,21 @@ async function fetchBraveSearchEvidence({ request, plan, query, round, fetchImpl
   return mapSearchEvidence(parseBraveSearchResults(html), { request, plan, provider: 'brave', round })
 }
 
-function parseJsonObject(content) {
+export function parseAgentJson(content) {
   const normalized = String(content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
   const start = normalized.indexOf('{')
   const end = normalized.lastIndexOf('}')
   if (start < 0 || end <= start) throw new Error('Agent did not return a JSON object.')
-  return JSON.parse(normalized.slice(start, end + 1))
+  const candidate = normalized.slice(start, end + 1)
+  try {
+    return JSON.parse(candidate)
+  } catch (parseError) {
+    try {
+      return JSON.parse(jsonrepair(candidate))
+    } catch {
+      throw new Error(`Agent 返回的 JSON 无法修复：${cleanString(parseError instanceof Error ? parseError.message : 'invalid JSON', 180)}`)
+    }
+  }
 }
 
 async function requestAgentJson({ config, apiKey, fetchImpl, role, instruction, payload }) {
@@ -740,7 +751,7 @@ async function requestAgentJson({ config, apiKey, fetchImpl, role, instruction, 
       messages: [
         {
           role: 'system',
-          content: `你是 ReHoYo 的${role}。你只能依据输入中的真实公开网页证据工作；不得补造评论、数量、URL 或事实。${instruction} 只返回合法 JSON 对象，不要 Markdown。`,
+          content: `你是 ReHoYo 的${role}。你只能依据输入中的真实公开网页证据工作；不得补造评论、数量、URL 或事实。RAG 中 role=player 的内容可作为玩家观点线索；role=context 的 Wiki 内容只用于理解人物、地点和版本背景，绝不能当作玩家评论、情绪或争议证据。${instruction} 只返回合法 JSON 对象，不要 Markdown。`,
         },
         { role: 'user', content: JSON.stringify(payload) },
       ],
@@ -756,7 +767,7 @@ async function requestAgentJson({ config, apiKey, fetchImpl, role, instruction, 
     throw new Error(`${role}请求失败：${cleanString(result?.error?.message || `HTTP ${response.status}`, 220)}`)
   }
   const content = result?.choices?.[0]?.message?.content
-  return parseJsonObject(content)
+  return parseAgentJson(content)
 }
 
 function validSentiment(value) {
@@ -793,6 +804,35 @@ function evidenceForModel(evidence) {
     published: item.publishedLabel,
     original: item.excerptOriginal,
   }))
+}
+
+function ragContextForModel(records) {
+  return (Array.isArray(records) ? records : []).map((item) => ({
+    documentId: cleanString(item.documentId, 200),
+    role: item.role === 'player' ? 'player' : 'context',
+    source: cleanString(item.source, 120),
+    region: cleanString(item.region, 20),
+    title: cleanString(item.title, 500),
+    url: cleanString(item.url, 2_000),
+    content: cleanString(item.content, 1_600),
+  }))
+}
+
+function playerDocumentsForRag(evidence, observedByUrl) {
+  return evidence.map((item) => {
+    const observed = observedByUrl.get(item.url)
+    return {
+      id: item.id,
+      role: 'player',
+      source: item.source,
+      region: item.region,
+      language: item.language,
+      title: observed?.title || item.title || item.source,
+      url: item.url,
+      text: observed?.text || item.excerptOriginal,
+      retrievedAt: observed?.retrievedAt || item.retrievedAt,
+    }
+  })
 }
 
 export function normalizeSentimentAnalyses(result) {
@@ -980,6 +1020,9 @@ export async function runLiveResearch({
   now = Date.now,
   runSeed = 'default',
   coveragePolicy = {},
+  ragStore,
+  createResearchBrowser,
+  collectWikiContextImpl = collectWikiContext,
 }) {
   if (!config?.configured) throw new Error('Real research requires a configured GLM key file.')
   const safeRequest = sanitizeResearchRequest(request)
@@ -1072,6 +1115,74 @@ export async function runLiveResearch({
   if (!targetReached) emit('research', 'research', 'risk', `已完成可用来源检索，但样本未达到目标：搜索 ${coverage.sitesAttempted} 个站点，取得 ${allEvidence.length} 条可核验玩家证据。后续结论将降级并明确显示证据不足。`, 92, allEvidence.map((item) => item.id), { severity: 'high', sitesAttempted: coverage.sitesAttempted, evidenceCount: allEvidence.length })
   const evidence = selectBalancedEvidence(allEvidence, maxEvidence)
   assertVerifiedEvidence(evidence)
+  let wikiDocuments = []
+  let browserDocuments = []
+  let ragStats = { documents: 0, contextDocuments: 0, playerDocuments: 0, chunks: 0 }
+  const ragEnabled = Boolean(ragStore)
+  if (ragEnabled || createResearchBrowser) {
+    wikiDocuments = await collectWikiContextImpl({
+      request: safeRequest,
+      fetchImpl,
+      now,
+      onSource: (result) => emit(
+        'research',
+        'research',
+        result.ok ? 'source' : 'risk',
+        result.ok ? `${result.source} 收集 ${result.count} 篇版本背景资料` : `${result.source} 暂时不可用：${result.error}`,
+        93,
+        [],
+        { source: result.source, region: 'GLOBAL', severity: result.ok ? undefined : 'medium' },
+      ),
+    })
+  }
+  if (createResearchBrowser) {
+    const researchBrowser = createResearchBrowser({
+      maxConcurrency: Math.max(1, Math.min(12, Math.floor(coveragePolicy.browserConcurrency || 4))),
+      onObservation: (observation) => {
+        const statusLabels = {
+          navigating: '正在无头访问',
+          completed: '已观察并提取',
+          challenge_waiting: '遇到人机验证，已暂停该页',
+          failed: '页面观察失败',
+        }
+        emit('research', 'research', 'browser', `${statusLabels[observation.status] || '浏览器状态更新'}：${observation.title || observation.source}`, 94, [], {
+          source: observation.source,
+          region: observation.region || 'GLOBAL',
+          browserUrl: observation.url,
+          browserTitle: observation.title,
+          browserStatus: observation.status,
+          browserPreview: observation.textPreview,
+          severity: observation.status === 'failed' ? 'medium' : undefined,
+        })
+      },
+    })
+    const playerTargets = evidence.slice(0, Math.max(1, Math.min(16, Math.floor(coveragePolicy.browserPlayerPages || 12)))).map((item) => ({
+      id: item.id,
+      url: item.url,
+      role: 'player',
+      source: item.source,
+      region: item.region,
+      language: item.language,
+      title: item.title,
+    }))
+    browserDocuments = await researchBrowser.observe([...wikiDocuments.slice(0, 8), ...playerTargets], { runId: runSeed, agentId: 'research' })
+  }
+  const observedByUrl = new Map(browserDocuments.map((document) => [document.url, document]))
+  const contextDocuments = wikiDocuments.map((document) => observedByUrl.get(document.url) || document)
+  if (ragEnabled) {
+    ragStore.indexDocuments({
+      runId: runSeed,
+      game: safeRequest.gameName,
+      version: safeRequest.versionLabel,
+      documents: [...contextDocuments, ...playerDocumentsForRag(evidence, observedByUrl)],
+    })
+    ragStats = ragStore.getStats(runSeed)
+    emit('research', 'research', 'rag', `本地知识库已写入 ${ragStats.documents} 篇文档、${ragStats.chunks} 个可检索片段`, 96, evidence.map((item) => item.id), {
+      ragDocuments: ragStats.documents,
+      ragChunks: ragStats.chunks,
+      wikiDocuments: ragStats.contextDocuments,
+    })
+  }
   emit('research', 'research', 'handoff', `${targetReached ? '覆盖目标达成' : '降级交接'}：已搜索 ${coverage.sitesAttempted} 个站点，交接 ${evidence.length} 条带 URL 的真实玩家证据`, 100, evidence.map((item) => item.id), {
     sitesAttempted: coverage.sitesAttempted,
     evidenceCount: evidence.length,
@@ -1081,6 +1192,12 @@ export async function runLiveResearch({
   emit('sentiment', 'sentiment', 'status', '玩家情绪 Agent 正在逐条分析真实证据', 8)
   emit('regional', 'regional', 'status', '地区差异 Agent 正在并行比较来源与语境', 8)
   const modelEvidence = evidenceForModel(evidence)
+  const sentimentRag = ragEnabled ? ragStore.retrieve(`${safeRequest.gameName} ${safeRequest.versionTitle} 玩家喜欢 不满 情绪 原因`, { runId: runSeed, roles: ['player', 'context'], limit: 10 }) : []
+  const regionalRag = ragEnabled ? ragStore.retrieve(`${safeRequest.gameName} ${safeRequest.versionTitle} 中国 日本 欧美 玩家 观点 差异`, { runId: runSeed, roles: ['player', 'context'], limit: 10 }) : []
+  if (ragEnabled) {
+    emit('sentiment', 'sentiment', 'rag', `情绪 Agent 从本地 RAG 取回 ${sentimentRag.length} 个相关片段`, 12, [], { ragHits: sentimentRag.length, ragDocuments: ragStats.documents, ragChunks: ragStats.chunks })
+    emit('regional', 'regional', 'rag', `地区 Agent 从本地 RAG 取回 ${regionalRag.length} 个相关片段`, 12, [], { ragHits: regionalRag.length, ragDocuments: ragStats.documents, ragChunks: ragStats.chunks })
+  }
   const [sentiment, regional] = await Promise.all([
     requestAgentJson({
       config,
@@ -1088,7 +1205,7 @@ export async function runLiveResearch({
       fetchImpl,
       role: '玩家情绪分析 Agent',
       instruction: '严格返回形如 {"summary":"...","analyses":[{"evidenceId":"输入 id","sentiment":"positive|neutral|negative","topics":["原因主题"],"confidence":0.0,"excerptZh":"忠实中文释义"}]}。analyses 必须逐条覆盖输入中的每一个 id，不多不少。',
-      payload: { task: safeRequest, evidence: modelEvidence },
+      payload: { task: safeRequest, evidence: modelEvidence, ragContext: ragContextForModel(sentimentRag) },
     }),
     requestAgentJson({
       config,
@@ -1096,7 +1213,7 @@ export async function runLiveResearch({
       fetchImpl,
       role: '地区差异分析 Agent',
       instruction: '返回 regions 数组，包含 CN、JP、WEST；只能比较输入证据中明确出现的主题。没有证据的地区必须明确写证据不足，不得补充常识或假设。该输出仅用于执行日志，最终地区计数由程序从证据确定性派生。',
-      payload: { task: safeRequest, evidence: modelEvidence },
+      payload: { task: safeRequest, evidence: modelEvidence, ragContext: ragContextForModel(regionalRag) },
     }).then((result) => {
       emit('regional', 'regional', 'handoff', '地区关注差异与证据缺口已完成', 100, evidence.map((item) => item.id))
       return result
@@ -1108,13 +1225,15 @@ export async function runLiveResearch({
   emit('sentiment', 'sentiment', 'handoff', '情绪分类、原因主题与中文释义已完成', 100, analyzedEvidence.map((item) => item.id), { evidenceRecords: analyzedEvidence })
   emit('strategy', 'strategy', 'status', '策略 Agent 已收到全部真实证据与上游结论', 16)
   const derivedMetrics = derivePercentages(analyzedEvidence)
+  const strategyRag = ragEnabled ? ragStore.retrieve(`${safeRequest.gameName} ${safeRequest.versionTitle} 风险 争议 下一版本 建议`, { runId: runSeed, roles: ['player', 'context'], limit: 12 }) : []
+  if (ragEnabled) emit('strategy', 'strategy', 'rag', `策略 Agent 从本地 RAG 取回 ${strategyRag.length} 个相关片段`, 20, [], { ragHits: strategyRag.length, ragDocuments: ragStats.documents, ragChunks: ragStats.chunks })
   const strategy = await requestAgentJson({
     config,
     apiKey,
     fetchImpl,
     role: '策略建议 Agent',
     instruction: '返回 summary、riskLevel、controversies、recommendations。每条争议含 title、description、severity、region、evidenceIds、propagation；每条建议含 priority、title、action、rationale、region、evidenceIds。所有结论必须引用输入中存在的证据 id；描述不得与 derivedMetrics 的确定性统计矛盾。证据不足以支持争议、传播路径或建议时，相应数组必须为空，不得为了完整格式而补造结论。',
-    payload: { task: safeRequest, derivedMetrics, sentimentSummary: sentiment.summary, regional, evidence: evidenceForModel(analyzedEvidence) },
+    payload: { task: safeRequest, derivedMetrics, sentimentSummary: sentiment.summary, regional, evidence: evidenceForModel(analyzedEvidence), ragContext: ragContextForModel(strategyRag) },
   })
   const report = buildReport(analyzedEvidence, regional, strategy)
   emit('strategy', 'strategy', 'complete', '真实全球玩家洞察报告已生成', 100, analyzedEvidence.map((item) => item.id))
@@ -1142,6 +1261,10 @@ export async function runLiveResearch({
       attempts: coverage.attempts.length,
       providers: [...new Set(coverage.attempts.map((attempt) => attempt.provider))],
       targetReached,
+      wikiDocuments: contextDocuments.length,
+      browserPagesObserved: browserDocuments.length,
+      ragDocuments: ragStats.documents,
+      ragChunks: ragStats.chunks,
     },
   }
 }

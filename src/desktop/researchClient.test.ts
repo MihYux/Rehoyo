@@ -13,6 +13,7 @@ import {
   parseRedditAtom,
   parseNiconicoSearch,
   parseNiconicoSnapshot,
+  parseAgentJson,
   parseBraveSearchResults,
   runLiveResearch,
   sanitizeResearchRequest,
@@ -318,6 +319,33 @@ describe('live research agent orchestration', () => {
     })).toEqual([expect.objectContaining({ id: 'live-west-001', confidence: 0.85 })])
   })
 
+  it('repairs a model JSON object with a missing property comma without inventing fields', () => {
+    const result = parseAgentJson(`\`\`\`json
+      {
+        "summary": "公开讨论出现分歧",
+        "analyses": [
+          {
+            "evidenceId": "live-west-001",
+            "excerptZh": "玩家喜欢音乐" "sentiment": "positive",
+            "topics": ["音乐表现"],
+            "confidence": 0.86
+          }
+        ]
+      }
+    \`\`\``)
+
+    expect(result).toEqual({
+      summary: '公开讨论出现分歧',
+      analyses: [{
+        evidenceId: 'live-west-001',
+        excerptZh: '玩家喜欢音乐',
+        sentiment: 'positive',
+        topics: ['音乐表现'],
+        confidence: 0.86,
+      }],
+    })
+  })
+
   it('stops instead of silently converting an unmapped Agent response to neutral', () => {
     expect(() => applySentimentAnalysis([
       { id: 'live-west-001', sentiment: 'neutral', topics: [], confidence: 0 },
@@ -438,6 +466,13 @@ describe('live research agent orchestration', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
 
+    let indexedDocuments: Array<{ id: string; role: string; url: string }> = []
+    const ragStore = {
+      indexDocuments: vi.fn(({ documents }) => { indexedDocuments = documents }),
+      getStats: vi.fn(() => ({ documents: indexedDocuments.length, contextDocuments: 1, playerDocuments: 3, chunks: indexedDocuments.length * 2 })),
+      retrieve: vi.fn(() => [{ documentId: 'wiki-ctx-1', role: 'context', source: 'Wikipedia', region: 'GLOBAL', language: 'zh-CN', title: '纳塔', url: 'https://zh.wikipedia.org/wiki/Natlan', content: '纳塔是版本背景地点。', retrievedAt: '2024-08-14T00:00:00.000Z', score: 3 }]),
+    }
+    const browserObserve = vi.fn(async (targets) => targets.map((target) => ({ ...target, title: target.title || target.source, text: target.role === 'context' ? '纳塔是版本背景地点。' : '玩家公开页面的完整可见正文。', retrievedAt: '2024-08-14T00:00:00.000Z' })))
     const preset = await runLiveResearch({
       config: {
         baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
@@ -457,6 +492,14 @@ describe('live research agent orchestration', () => {
         providers: ['bigmodel'],
       },
       onEvent: (event) => events.push(event),
+      ragStore,
+      createResearchBrowser: ({ onObservation }) => ({
+        observe: async (targets) => {
+          targets.forEach((target) => onObservation({ ...target, status: 'completed', title: target.title || target.source, textPreview: '已提取公开页面正文' }))
+          return browserObserve(targets)
+        },
+      }),
+      collectWikiContextImpl: vi.fn(async () => [{ id: 'wiki-ctx-1', role: 'context', source: 'Wikipedia', region: 'GLOBAL', language: 'zh-CN', title: '纳塔', url: 'https://zh.wikipedia.org/wiki/Natlan', text: '纳塔是版本背景地点。', retrievedAt: '2024-08-14T00:00:00.000Z' }]),
     })
 
     const lastRetrievalIndex = Math.max(...calls.map((call, index) => call.startsWith('retrieve:') ? index : -1))
@@ -478,6 +521,11 @@ describe('live research agent orchestration', () => {
     expect(sentimentSystem).toContain('"analyses"')
     expect(strategyPayload).toMatchObject({ derivedMetrics: { positivePercent: 33, negativePercent: 33, neutralPercent: 34 } })
     expect(events.at(-1)).toMatchObject({ agentId: 'strategy', kind: 'complete' })
+    expect(events.some((event) => event.kind === 'browser' && event.browserStatus === 'completed')).toBe(true)
+    expect(events.filter((event) => event.kind === 'rag')).toHaveLength(4)
+    expect(ragStore.indexDocuments).toHaveBeenCalledOnce()
+    expect(indexedDocuments).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'context' }), expect.objectContaining({ role: 'player' })]))
+    expect(strategyPayload.ragContext).toEqual([expect.objectContaining({ role: 'context', source: 'Wikipedia' })])
     expect(events.find((event) => event.agentId === 'sentiment' && event.kind === 'handoff')?.evidenceRecords)
       .toEqual(expect.arrayContaining([expect.objectContaining({ id: 'live-west-001', confidence: 0.91 })]))
     expect(preset.dataMode).toBe('live')
@@ -498,5 +546,6 @@ describe('live research agent orchestration', () => {
     ])
     expect(preset.report.controversies[0].evidenceIds).toEqual(['live-west-001', 'live-cn-001'])
     expect(preset.report.controversies[0].propagation).toBe('Reddit → Bilibili')
+    expect(preset.researchCoverage).toMatchObject({ wikiDocuments: 1, browserPagesObserved: 4, ragDocuments: 4, ragChunks: 8 })
   })
 })

@@ -123,6 +123,8 @@ export function parseNiconicoSnapshot(value: unknown): Array<{
   likeCount: number
 }>
 
+export function parseAgentJson(value: unknown): Record<string, unknown>
+
 export function normalizeSentimentAnalyses(value: unknown): Array<{
   id: string
   sentiment: EvidenceRecord['sentiment']
