@@ -22,6 +22,9 @@ export interface ResearchBrowserObservation {
   status: 'navigating' | 'completed' | 'challenge_waiting' | 'failed'
   statusCode?: number
   error?: string
+  pageId?: string
+  action?: 'open' | 'scroll' | 'click' | 'type' | 'extract_comments'
+  screenshotDataUrl?: string
 }
 
 export interface ObservedResearchDocument extends ResearchBrowserTarget {
@@ -37,5 +40,13 @@ export function createHeadlessResearchBrowser(options?: {
   maxConcurrency?: number
   navigationTimeoutMs?: number
 }): {
+  open(target: ResearchBrowserTarget, context?: { runId?: string; agentId?: string }): Promise<{ pageId: string; title: string; text: string; status: string; statusCode?: number }>
+  scroll(pageId: string, input?: { direction?: 'up' | 'down'; amount?: number }): Promise<void>
+  click(pageId: string, selector: string): Promise<void>
+  type(pageId: string, selector: string, value: string): Promise<void>
+  extractVisibleComments(pageId: string, input?: { selectors?: string[] }): Promise<string[]>
+  screenshot(pageId: string): Promise<string>
+  closePage(pageId: string): Promise<void>
+  close(): Promise<void>
   observe(targets: ResearchBrowserTarget[], context?: { runId?: string; agentId?: string }): Promise<ObservedResearchDocument[]>
 }

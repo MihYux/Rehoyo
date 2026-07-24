@@ -46,6 +46,150 @@ export function createHeadlessResearchBrowser({
   navigationTimeoutMs = 30_000,
 } = {}) {
   const concurrency = Math.max(1, Math.min(12, Math.floor(maxConcurrency)))
+  let browser
+  let context
+  let pageCounter = 0
+  const pages = new Map()
+
+  async function ensureContext() {
+    if (context) return context
+    browser = await browserType.launch({ headless: true })
+    context = await browser.newContext({
+      viewport: { width: 1365, height: 768 },
+      serviceWorkers: 'block',
+      acceptDownloads: false,
+      locale: 'zh-CN',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 ReHoYoResearch/1.0',
+    })
+    await context.route('**/*', async (route) => {
+      const resourceType = route.request().resourceType()
+      if (['media', 'font'].includes(resourceType)) await route.abort()
+      else await route.continue()
+    })
+    return context
+  }
+
+  function entryFor(pageId) {
+    const entry = pages.get(String(pageId || ''))
+    if (!entry) throw new Error('Research browser page is not active.')
+    return entry
+  }
+
+  async function screenshot(pageId) {
+    const { page } = entryFor(pageId)
+    if (typeof page.screenshot !== 'function') return ''
+    const bytes = await page.screenshot({ type: 'jpeg', quality: 58, fullPage: false })
+    return `data:image/jpeg;base64,${Buffer.from(bytes).toString('base64')}`
+  }
+
+  async function emitPage(entry, payload) {
+    let screenshotDataUrl = ''
+    try {
+      screenshotDataUrl = await screenshot(entry.pageId)
+    } catch {
+      // A preview failure must not discard verified page text.
+    }
+    onObservation({
+      runId: entry.runId,
+      agentId: entry.agentId,
+      id: entry.target.id,
+      pageId: entry.pageId,
+      url: entry.target.url,
+      source: entry.target.source,
+      role: entry.target.role,
+      region: entry.target.region,
+      language: entry.target.language,
+      screenshotDataUrl,
+      ...payload,
+    })
+  }
+
+  async function open(target, { runId = 'research', agentId = 'research' } = {}) {
+    if (pages.size >= concurrency) throw new Error(`Research browser reached its ${concurrency}-page concurrency limit.`)
+    const safeTarget = { ...target, url: validatePublicHttpsUrl(target?.url) }
+    const activeContext = await ensureContext()
+    const page = await activeContext.newPage()
+    const pageId = `${agentId}-${++pageCounter}`
+    const entry = { pageId, page, target: safeTarget, runId, agentId, status: 'navigating' }
+    pages.set(pageId, entry)
+    onObservation({ runId, agentId, id: safeTarget.id, pageId, url: safeTarget.url, source: safeTarget.source, role: safeTarget.role, region: safeTarget.region, language: safeTarget.language, action: 'open', status: 'navigating' })
+    try {
+      const response = await page.goto(safeTarget.url, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs })
+      const title = clean(await page.title(), 500)
+      const text = clean(await page.locator('body').innerText({ timeout: Math.min(navigationTimeoutMs, 12_000) }))
+      const statusCode = typeof response?.status === 'function' ? response.status() : undefined
+      entry.title = title
+      entry.text = text
+      entry.statusCode = statusCode
+      if (CHALLENGE_PATTERN.test(`${title} ${text.slice(0, 2_000)}`)) {
+        entry.status = 'challenge_waiting'
+        await emitPage(entry, { action: 'open', title, status: 'challenge_waiting', statusCode })
+        return { pageId, title, text, status: entry.status, statusCode }
+      }
+      if (!text) throw new Error('页面没有可提取的可见文本。')
+      entry.status = 'completed'
+      await emitPage(entry, { action: 'open', title, textPreview: text.slice(0, 220), status: 'completed', statusCode })
+      return { pageId, title, text, status: entry.status, statusCode }
+    } catch (error) {
+      entry.status = 'failed'
+      await emitPage(entry, { action: 'open', status: 'failed', error: clean(error instanceof Error ? error.message : error, 240) })
+      throw error
+    }
+  }
+
+  async function scroll(pageId, { direction = 'down', amount = 900 } = {}) {
+    const entry = entryFor(pageId)
+    const distance = Math.max(200, Math.min(4_000, Math.floor(Number(amount) || 900))) * (direction === 'up' ? -1 : 1)
+    await entry.page.evaluate((value) => window.scrollBy(0, value), distance)
+    await emitPage(entry, { action: 'scroll', status: entry.status, title: entry.title })
+  }
+
+  async function click(pageId, selector) {
+    const entry = entryFor(pageId)
+    await entry.page.click(clean(selector, 500), { timeout: Math.min(navigationTimeoutMs, 12_000) })
+    await emitPage(entry, { action: 'click', status: entry.status, title: entry.title })
+  }
+
+  async function type(pageId, selector, value) {
+    const entry = entryFor(pageId)
+    await entry.page.fill(clean(selector, 500), clean(value, 2_000))
+    await emitPage(entry, { action: 'type', status: entry.status, title: entry.title })
+  }
+
+  async function extractVisibleComments(pageId, { selectors = [] } = {}) {
+    const entry = entryFor(pageId)
+    const candidates = [...new Set([...selectors, '[data-testid="comment"]', '.comment', '.reply', 'article'])].slice(0, 12)
+    const comments = []
+    for (const selector of candidates) {
+      try {
+        const values = await entry.page.locator(selector).allInnerTexts()
+        for (const value of values) {
+          const normalized = clean(value, 2_000)
+          if (normalized.length >= 12 && !comments.includes(normalized)) comments.push(normalized)
+        }
+      } catch {
+        // Unsupported selectors are expected across heterogeneous public sites.
+      }
+      if (comments.length >= 80) break
+    }
+    await emitPage(entry, { action: 'extract_comments', status: entry.status, title: entry.title, textPreview: comments.slice(0, 2).join(' · ').slice(0, 220) })
+    return comments.slice(0, 80)
+  }
+
+  async function closePage(pageId) {
+    const entry = pages.get(pageId)
+    if (!entry) return
+    pages.delete(pageId)
+    await entry.page.close().catch(() => undefined)
+  }
+
+  async function close() {
+    await Promise.all([...pages.keys()].map(closePage))
+    await context?.close().catch(() => undefined)
+    await browser?.close().catch(() => undefined)
+    context = undefined
+    browser = undefined
+  }
 
   async function observe(targets, { runId = 'research', agentId = 'research' } = {}) {
     const safeTargets = (Array.isArray(targets) ? targets : []).map((target) => ({
@@ -54,73 +198,37 @@ export function createHeadlessResearchBrowser({
     }))
     if (!safeTargets.length) return []
 
-    const browser = await browserType.launch({ headless: true })
-    let context
     try {
-      context = await browser.newContext({
-        viewport: { width: 1365, height: 768 },
-        serviceWorkers: 'block',
-        acceptDownloads: false,
-        locale: 'zh-CN',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 ReHoYoResearch/1.0',
-      })
-      await context.route('**/*', async (route) => {
-        const resourceType = route.request().resourceType()
-        if (['image', 'media', 'font'].includes(resourceType)) await route.abort()
-        else await route.continue()
-      })
-
       const documents = []
       let cursor = 0
       const workers = Array.from({ length: Math.min(concurrency, safeTargets.length) }, async () => {
         while (cursor < safeTargets.length) {
           const target = safeTargets[cursor]
           cursor += 1
-          onObservation({ runId, agentId, id: target.id, url: target.url, source: target.source, role: target.role, region: target.region, language: target.language, status: 'navigating' })
-          const page = await context.newPage()
+          let opened
           try {
-            const response = await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: navigationTimeoutMs })
-            await page.evaluate(() => window.scrollTo(0, Math.min(document.body.scrollHeight, 1200))).catch(() => undefined)
-            const title = clean(await page.title(), 500)
-            const text = clean(await page.locator('body').innerText({ timeout: Math.min(navigationTimeoutMs, 12_000) }))
-            const statusCode = typeof response?.status === 'function' ? response.status() : undefined
-            if (CHALLENGE_PATTERN.test(`${title} ${text.slice(0, 2_000)}`)) {
-              onObservation({ runId, agentId, id: target.id, url: target.url, source: target.source, role: target.role, region: target.region, language: target.language, title, status: 'challenge_waiting', statusCode })
-              continue
-            }
-            if (!text) throw new Error('页面没有可提取的可见文本。')
+            opened = await open(target, { runId, agentId })
+            if (opened.status === 'challenge_waiting') continue
+            await scroll(opened.pageId, { direction: 'down', amount: 1200 }).catch(() => undefined)
             documents.push({
               ...target,
-              title: title || target.title || target.source,
-              text,
+              title: opened.title || target.title || target.source,
+              text: opened.text,
               retrievedAt: new Date().toISOString(),
             })
-            onObservation({ runId, agentId, id: target.id, url: target.url, source: target.source, role: target.role, region: target.region, language: target.language, title, textPreview: text.slice(0, 220), status: 'completed', statusCode })
           } catch (error) {
-            onObservation({
-              runId,
-              agentId,
-              id: target.id,
-              url: target.url,
-              source: target.source,
-              role: target.role,
-              region: target.region,
-              language: target.language,
-              status: 'failed',
-              error: clean(error instanceof Error ? error.message : error, 240),
-            })
+            // open() already emits a redacted failure observation.
           } finally {
-            await page.close().catch(() => undefined)
+            if (opened?.pageId) await closePage(opened.pageId)
           }
         }
       })
       await Promise.all(workers)
       return documents
     } finally {
-      await context?.close().catch(() => undefined)
-      await browser.close().catch(() => undefined)
+      await close()
     }
   }
 
-  return Object.freeze({ observe })
+  return Object.freeze({ open, scroll, click, type, extractVisibleComments, screenshot, closePage, close, observe })
 }

@@ -52,6 +52,9 @@ export interface AnalysisEvent {
   browserTitle?: string
   browserStatus?: 'navigating' | 'completed' | 'challenge_waiting' | 'failed'
   browserPreview?: string
+  browserPageId?: string
+  browserAction?: 'open' | 'scroll' | 'click' | 'type' | 'extract_comments'
+  browserScreenshot?: string
   ragHits?: number
   ragDocuments?: number
   ragChunks?: number

@@ -1152,6 +1152,9 @@ export async function runLiveResearch({
           browserTitle: observation.title,
           browserStatus: observation.status,
           browserPreview: observation.textPreview,
+          browserPageId: observation.pageId,
+          browserAction: observation.action,
+          browserScreenshot: observation.screenshotDataUrl,
           severity: observation.status === 'failed' ? 'medium' : undefined,
         })
       },
