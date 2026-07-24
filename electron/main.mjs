@@ -20,6 +20,7 @@ import {
 import { runLiveResearch, sanitizeResearchRequest } from './research-client.mjs'
 import { createHeadlessResearchBrowser } from './headless-research-browser.mjs'
 import { createLocalRagStore } from './local-rag-store.mjs'
+import { createResearchHistoryStore } from './research-history-store.mjs'
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(electronDirectory, '..')
@@ -43,6 +44,7 @@ try {
 let mainWindow = null
 let connectionManager = null
 let localRagStore = null
+let researchHistoryStore = null
 let ipcRegistered = false
 const activeAdvisorStreams = new Map()
 const activeResearchRuns = new Set()
@@ -182,6 +184,7 @@ function registerIpcHandlers() {
         getApiKey: () => connectionManager.getApiKey(),
         runSeed: runId,
         ragStore: localRagStore,
+        historyStore: researchHistoryStore,
         createResearchBrowser: (options) => createHeadlessResearchBrowser(options),
         onEvent: (researchEvent) => {
           if (!event.sender.isDestroyed()) {
@@ -234,7 +237,9 @@ app.whenReady().then(async () => {
       : undefined,
   })
   await connectionManager.initialize()
-  localRagStore = createLocalRagStore({ dbPath: path.join(app.getPath('userData'), 'rehoyo-research.sqlite') })
+  const researchDbPath = path.join(app.getPath('userData'), 'rehoyo-research.sqlite')
+  localRagStore = createLocalRagStore({ dbPath: researchDbPath })
+  researchHistoryStore = createResearchHistoryStore({ dbPath: researchDbPath })
   registerIpcHandlers()
   await createMainWindow()
 
@@ -250,4 +255,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   localRagStore?.close()
   localRagStore = null
+  researchHistoryStore?.close()
+  researchHistoryStore = null
 })
