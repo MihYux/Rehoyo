@@ -95,7 +95,7 @@ export function sanitizeGlmAdvisorRequest(value) {
 
   return {
     question,
-    localAnswer: cleanString(input.localAnswer, 4000),
+    localAnswer: cleanString(input.localAnswer, 16_000),
     evidence,
     dataMode: 'live',
   }
@@ -130,7 +130,7 @@ function createAdvisorRequestBody(config, safeRequest, stream) {
     messages: buildMessages(safeRequest),
     thinking: { type: 'disabled' },
     temperature: 0.2,
-    max_tokens: 1200,
+    max_tokens: 6000,
     stream,
   })
 }

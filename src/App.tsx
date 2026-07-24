@@ -12,6 +12,7 @@ import { startTask } from './domain/engine'
 import { isCompletedGroundedTask } from './domain/grounding'
 import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
 import { createPlanVersion, deriveReleasePlan, type ReleaseProject } from './domain/release-project'
+import { applyReleasePlanMarkdown, buildReleasePlanMarkdown } from './domain/release-plan-markdown'
 import { loadReleaseProjects, saveReleaseProject } from './domain/release-storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
 import { ConnectionGate } from './features/connection/ConnectionGate'
@@ -140,14 +141,14 @@ export function AppRoutes() {
 
   const handleOpenProject = (project: ReleaseProject) => {
     navigate(project.currentPlan
-      ? `/projects/${encodeURIComponent(project.id)}/workspace?view=regions`
+      ? `/projects/${encodeURIComponent(project.id)}/workspace?view=plan`
       : `/projects/${encodeURIComponent(project.id)}/analyze`)
   }
 
   const handleResearchComplete = useCallback((project: ReleaseProject, preset: AnalysisPreset) => {
     const plan = deriveReleasePlan(project, preset)
     const draft = createPlanVersion(project.id, plan, project.planVersions)
-    const updated: ReleaseProject = {
+    const groundedProject: ReleaseProject = {
       ...project,
       researchSnapshot: preset,
       researchRunIds: [...new Set([...project.researchRunIds, preset.id])],
@@ -157,8 +158,9 @@ export function AppRoutes() {
       status: 'review_required',
       updatedAt: new Date().toISOString(),
     }
+    const updated = applyReleasePlanMarkdown(groundedProject, buildReleasePlanMarkdown(groundedProject), 'agent')
     persistProject(updated)
-    navigate(`/projects/${encodeURIComponent(project.id)}/workspace?view=regions`)
+    navigate(`/projects/${encodeURIComponent(project.id)}/workspace?view=plan`)
   }, [navigate, persistProject])
 
   const handleStart = (preset: AnalysisPreset) => {

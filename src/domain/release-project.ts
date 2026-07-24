@@ -210,6 +210,22 @@ export interface PlanVersion {
   createdAt: string
 }
 
+export interface ReleasePlanDocumentRevision {
+  id: string
+  revision: number
+  markdown: string
+  updatedBy: 'agent' | 'user'
+  createdAt: string
+}
+
+export interface ReleasePlanDocument {
+  markdown: string
+  revision: number
+  updatedBy: 'agent' | 'user'
+  updatedAt: string
+  revisions: ReleasePlanDocumentRevision[]
+}
+
 export interface ReleaseProject {
   id: string
   game: string
@@ -225,6 +241,7 @@ export interface ReleaseProject {
   currentPlan?: ReleasePlan
   planVersions: PlanVersion[]
   currentPlanVersionId?: string
+  releasePlanDocument?: ReleasePlanDocument
   characterExecutions: CharacterExecutionState[]
   status: 'brief_draft' | 'researching' | 'strategy_draft' | 'review_required' | 'approved'
   createdAt: string

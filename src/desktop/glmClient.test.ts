@@ -300,6 +300,7 @@ describe('GLM desktop advisor client', () => {
     expect(request.question).toBe('为什么欧美玩家评价不同？')
     expect(request.evidence).toHaveLength(12)
     expect(request).not.toHaveProperty('apiKey')
+    expect(sanitizeGlmAdvisorRequest({ ...groundedRequest, localAnswer: '文'.repeat(20_000) }).localAnswer).toHaveLength(16_000)
     expect(() => sanitizeGlmAdvisorRequest({ question: '  ', localAnswer: '', evidence: [] })).toThrow(/question/i)
     expect(() => sanitizeGlmAdvisorRequest({ question: '有效问题', localAnswer: '', evidence: [{ id: 'x', excerptZh: '无来源' }] })).toThrow(/verified HTTPS/i)
   })

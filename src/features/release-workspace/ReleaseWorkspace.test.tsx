@@ -42,7 +42,8 @@ describe('release workspace progressive disclosure', () => {
     expect(screen.getByRole('heading', { name: '区域分析' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /日本/ })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '发行方案' }))
-    expect(screen.getAllByTestId('release-action-row').length).toBeLessThanOrEqual(3)
+    expect(screen.getByRole('heading', { name: /全球发行方案/ })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '发行方案 Agent' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /AI角色执行/ }))
     expect(screen.getByRole('heading', { name: 'AI角色发行预演' })).toBeInTheDocument()

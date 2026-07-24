@@ -1,5 +1,5 @@
-import { ArrowRight, CalendarBlank, CaretDown, CheckCircle, Database, GlobeHemisphereWest, LockKey, Sparkle, Strategy, WarningCircle } from '@phosphor-icons/react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, CheckCircle, Database, GlobeHemisphereWest, LockKey, Sparkle, Strategy } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BrandMark } from '../../components/BrandMark'
 import {
@@ -8,11 +8,11 @@ import {
   pauseCharacterSandbox,
   startCharacterSandbox,
   stopCharacterSandbox,
-  type ReleaseAction,
   type ReleaseProject,
   type ReleaseRegion,
 } from '../../domain/release-project'
 import { ReleaseAssistant } from './ReleaseAssistant'
+import { ReleasePlanStudio } from './ReleasePlanStudio'
 
 interface Props {
   project: ReleaseProject
@@ -29,25 +29,6 @@ const views: Array<{ id: WorkspaceView; label: string; icon: typeof Strategy }> 
 const regionLabels: Record<ReleaseRegion, string> = { CN: '中国', JP: '日本', WEST: '北美及英语市场' }
 const regionFlags: Record<ReleaseRegion, string> = { CN: 'cn', JP: 'jp', WEST: 'us' }
 const basisLabels = { evidence_backed: '证据＋Brief', brief_driven: 'Brief驱动', experimental_hypothesis: '实验假设' }
-const ratingLabels = { recommended: '建议执行', adjust_before_execution: '调整后执行', limited_pilot: '小范围验证', manual_review: '人工确认', not_recommended: '不建议' }
-
-function ActionRow({ action, expanded, onToggle }: { action: ReleaseAction; expanded: boolean; onToggle: () => void }) {
-  return <article className={`release-action-row ${expanded ? 'is-expanded' : ''}`} data-testid="release-action-row">
-    <button type="button" onClick={onToggle} aria-expanded={expanded}>
-      <span className={`action-basis basis-${action.decisionTrace.basis}`}>{basisLabels[action.decisionTrace.basis]}</span>
-      <strong>{action.title}</strong>
-      <small>{action.stage} · D{action.startDay >= 0 ? '+' : ''}{action.startDay} → D+{action.endDay}</small>
-      <em>{ratingLabels[action.evaluation.rating]} · {action.evaluation.score}</em>
-      {action.locked ? <LockKey size={17} /> : <CaretDown size={17} />}
-    </button>
-    {expanded && <div className="release-action-detail">
-      <p>{action.description}</p>
-      <dl><div><dt>目标</dt><dd>{action.objective}</dd></div><div><dt>渠道</dt><dd>{action.channels.join('、')}</dd></div><div><dt>成本／风险</dt><dd>{action.costLevel}／{action.riskLevel}</dd></div><div><dt>观察指标</dt><dd>{action.metrics.join('、')}</dd></div></dl>
-      <section><span>决策链</span><p>{action.decisionTrace.reasoningSummary}</p><small>公开证据 {action.decisionTrace.evidenceIds.length} 条 · Brief字段 {action.decisionTrace.briefFactIds.length} 个</small></section>
-      {action.evaluation.issues.length > 0 && <section className="action-warning"><WarningCircle size={18} /><div><span>执行前处理</span><p>{action.evaluation.issues.join('；')}。{action.evaluation.optimization}</p></div></section>}
-    </div>}
-  </article>
-}
 
 export function ReleaseWorkspace({ project, onUpdate }: Props) {
   const plan = project.currentPlan
@@ -59,12 +40,8 @@ export function ReleaseWorkspace({ project, onUpdate }: Props) {
   }, [view])
   const defaultRegion = plan?.regionalPlans.find((item) => item.evidenceCount > 0)?.region ?? project.regions[0]
   const [region, setRegion] = useState<ReleaseRegion>(defaultRegion)
-  const [showAllActions, setShowAllActions] = useState(false)
-  const [expandedAction, setExpandedAction] = useState('')
   const [sandboxMode, setSandboxMode] = useState<'official' | 'template' | 'bounded'>('template')
   const regionalPlan = plan?.regionalPlans.find((item) => item.region === region)
-  const regionalActions = useMemo(() => plan?.actions.filter((item) => item.region === region) ?? [], [plan, region])
-  const visibleActions = showAllActions ? regionalActions : regionalActions.slice(0, 3)
   const characterPlan = plan?.characterPlans.find((item) => item.targetRegion === region) ?? plan?.characterPlans[0]
   const characterExecution = characterPlan ? (project.characterExecutions ?? []).find((item) => item.actionId === characterPlan.actionId) : undefined
   const evidence = project.researchSnapshot?.evidence ?? []
@@ -87,7 +64,7 @@ export function ReleaseWorkspace({ project, onUpdate }: Props) {
     </nav>
 
     <main className="release-workspace-main">
-      {view !== 'evidence' && <div className="workspace-region-switcher" aria-label="选择区域">{project.regions.map((item) => <button type="button" key={item} className={region === item ? 'is-selected' : ''} onClick={() => setRegion(item)} aria-label={regionLabels[item]}><span className={`fi fi-${regionFlags[item]}`} /><strong>{regionLabels[item]}</strong><small>{plan.regionalPlans.find((regional) => regional.region === item)?.evidenceCount ?? 0} 条真实证据</small></button>)}</div>}
+      {view !== 'evidence' && view !== 'plan' && <div className="workspace-region-switcher" aria-label="选择区域">{project.regions.map((item) => <button type="button" key={item} className={region === item ? 'is-selected' : ''} onClick={() => setRegion(item)} aria-label={regionLabels[item]}><span className={`fi fi-${regionFlags[item]}`} /><strong>{regionLabels[item]}</strong><small>{plan.regionalPlans.find((regional) => regional.region === item)?.evidenceCount ?? 0} 条真实证据</small></button>)}</div>}
 
       {view === 'regions' && regionalPlan && <section className="workspace-view-section release-regions-view">
         <header className="workspace-view-heading"><div><span>02 · REGIONAL ANALYSIS</span><h1>区域分析</h1><p>Agent只用当前可核验公开页面解释地区信号；没有证据的区域保持空白。</p></div><span className={`coverage-label coverage-${regionalPlan.evidenceCoverage}`}>{regionalPlan.evidenceCoverage === 'insufficient' ? '证据不足' : regionalPlan.evidenceCoverage === 'partial' ? '部分覆盖' : '覆盖充分'}</span></header>
@@ -96,13 +73,7 @@ export function ReleaseWorkspace({ project, onUpdate }: Props) {
         <section className="region-next-step"><div><span>下一步</span><h2>把区域信号转成可执行发行方案</h2></div><button type="button" onClick={() => setParams({ view: 'plan' })}>查看发行方案 <ArrowRight size={18} /></button></section>
       </section>}
 
-      {view === 'plan' && regionalPlan && <section className="workspace-view-section release-plan-view">
-        <header className="workspace-view-heading"><div><span>03 · RELEASE PLAN</span><h1>发行方案</h1><p>全球统一主轴保持不变；素材、渠道与节奏按区域证据和Brief约束调整。</p></div></header>
-        <article className="global-axis-panel"><GlobeHemisphereWest size={27} /><div><span>全球宣发主轴</span><h2>{plan.globalStrategy.axis}</h2><p>{plan.globalStrategy.unifiedExpression}</p></div></article>
-        <div className="release-plan-summary"><section><span>区域主推</span><strong>{regionalPlan.primarySellingPoint}</strong><p>{regionalPlan.strategySummary}</p></section><section><span>42天节奏</span><div className="mini-release-calendar"><i /><i /><i /><i /></div><p>D-14预热 · D0上线 · D8持续 · D29长尾</p></section></div>
-        <section className="release-actions-section"><header><div><span>发行动作</span><h2>{regionLabels[region]} · {regionalActions.length}项结构化动作</h2></div><small>默认只显示最前面的3项</small></header>{visibleActions.map((action) => <ActionRow key={action.id} action={action} expanded={expandedAction === action.id} onToggle={() => setExpandedAction((current) => current === action.id ? '' : action.id)} />)}{regionalActions.length > 3 && <button className="show-more-actions" type="button" onClick={() => setShowAllActions((current) => !current)}>{showAllActions ? '收起次要动作' : `继续查看其余 ${regionalActions.length - 3} 项动作`} <CaretDown size={17} /></button>}</section>
-        <section className="release-calendar-section"><header><CalendarBlank size={22} /><div><span>42 DAY RELEASE RHYTHM</span><h2>版本发行节奏</h2></div></header>{(['preheat', 'launch', 'sustain', 'long_tail'] as const).map((stage, index) => <div className="release-calendar-lane" key={stage}><span>{['预热期', '上线爆发期', '持续运营期', '长尾召回期'][index]}</span><div>{regionalActions.filter((item) => item.stage === stage).map((item) => <i key={item.id}>{item.title}</i>)}</div></div>)}</section>
-      </section>}
+      {view === 'plan' && <ReleasePlanStudio project={project} onUpdate={onUpdate} onShowEvidence={() => setParams({ view: 'evidence' })} />}
 
       {view === 'character' && <section className="workspace-view-section character-execution-view">
         <header className="workspace-view-heading"><div><span>04 · CHARACTER EXECUTION</span><h1>AI角色发行预演</h1><p>角色Agent只在受控沙盒中执行已审核方案。它不会接触、识别或向真实玩家发送消息。</p></div><span className="sandbox-badge"><LockKey size={15} /> 未连接真实玩家</span></header>
@@ -130,6 +101,6 @@ export function ReleaseWorkspace({ project, onUpdate }: Props) {
         <div className="release-evidence-list">{evidence.map((item) => <article key={item.id}><span>{item.source} · {item.region}</span><h2>{item.title || item.excerptZh.slice(0, 60)}</h2><p>{item.excerptZh}</p><a href={item.url} target="_blank" rel="noreferrer">查看原始HTTPS页面 <ArrowRight size={15} /></a></article>)}</div>
       </section>}
     </main>
-    <ReleaseAssistant project={project} region={region} onShowEvidence={() => setParams({ view: 'evidence' })} />
+    {view !== 'plan' && <ReleaseAssistant project={project} region={region} onShowEvidence={() => setParams({ view: 'evidence' })} />}
   </div>
 }
