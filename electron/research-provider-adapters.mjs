@@ -1,4 +1,5 @@
 import { searchOpenAIWeb } from './openai-web-search.mjs'
+import { parseResearchToolCall } from './research-tools.mjs'
 
 const DEFAULT_BIGMODEL_ENDPOINT = 'https://open.bigmodel.cn/api/coding/paas/v4'
 const DEFAULT_OPENAI_ENDPOINT = 'https://api.openai.com/v1'
@@ -13,6 +14,10 @@ function clean(value, limit = 2_000) {
 
 function rawText(value, limit = MAX_TEXT_LENGTH) {
   return String(value ?? '').trim().slice(0, limit)
+}
+
+function verbatimText(value, limit = MAX_TEXT_LENGTH) {
+  return String(value ?? '').slice(0, limit)
 }
 
 function endpointUrl(value, fallback) {
@@ -30,6 +35,52 @@ function httpsUrl(value) {
   } catch {
     return ''
   }
+}
+
+function ipv4Parts(hostname) {
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return null
+  const parts = hostname.split('.').map(Number)
+  return parts.every((part) => part >= 0 && part <= 255) ? parts : null
+}
+
+function isNonPublicIpv4(parts) {
+  if (!parts) return false
+  const [a, b, c] = parts
+  return a === 0
+    || a === 10
+    || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 192 && b === 0 && (c === 0 || c === 2))
+    || (a === 198 && (b === 18 || b === 19))
+    || (a === 198 && b === 51 && c === 100)
+    || (a === 203 && b === 0 && c === 113)
+    || a >= 224
+}
+
+function isNonPublicHostname(value) {
+  const hostname = String(value || '').toLocaleLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (!hostname) return true
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname.endsWith('.lan') || hostname.endsWith('.home.arpa')) return true
+  const ipv4 = ipv4Parts(hostname)
+  if (ipv4) return isNonPublicIpv4(ipv4)
+  if (!hostname.includes(':')) return false
+  if (hostname === '::' || hostname === '::1') return true
+  if (/^(?:fc|fd)/i.test(hostname) || /^fe[89ab]/i.test(hostname) || /^ff/i.test(hostname)) return true
+  const mappedIpv4 = hostname.match(/(?:^|:)ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i)?.[1]
+  return Boolean(mappedIpv4 && isNonPublicIpv4(ipv4Parts(mappedIpv4)))
+}
+
+function publicHttpsUrl(value) {
+  const normalized = httpsUrl(value)
+  if (!normalized) throw new Error('Public supplement URL must use HTTPS.')
+  const parsed = new URL(normalized)
+  if (parsed.username || parsed.password || isNonPublicHostname(parsed.hostname)) {
+    throw new Error('Public supplement URL host must be publicly routable.')
+  }
+  return normalized
 }
 
 function combineSignal(signal, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -257,13 +308,17 @@ export function parseNiconicoCandidates(payload) {
 }
 
 async function fetchDiscoveryResource({ url, headers, fetchImpl, signal, timeoutMs, parser }) {
-  const response = await fetchImpl(url, {
-    method: 'GET',
-    headers,
-    signal: combineSignal(signal, timeoutMs),
-  })
-  await assertResponse(response, 'webfetch')
-  return parser(response)
+  try {
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers,
+      signal: combineSignal(signal, timeoutMs),
+    })
+    await assertResponse(response, 'webfetch')
+    return await parser(response)
+  } catch (error) {
+    throw normalizeThrown(error, 'webfetch')
+  }
 }
 
 function redditSearchUrl(query) {
@@ -335,8 +390,9 @@ export function createWebFetchDiscoveryProvider({ fetchImpl = fetch, timeoutMs =
     const candidates = outcomes
       .filter((outcome) => outcome.status === 'fulfilled')
       .flatMap((outcome) => outcome.value)
-    if (!candidates.length && outcomes.every((outcome) => outcome.status === 'rejected')) {
-      throw outcomes.find((outcome) => outcome.status === 'rejected').reason
+    const firstFailure = outcomes.find((outcome) => outcome.status === 'rejected')
+    if (!candidates.length && firstFailure) {
+      throw normalizeThrown(firstFailure.reason, 'webfetch')
     }
     return { candidates: dedupeCandidates(candidates) }
   }
@@ -349,17 +405,20 @@ export async function fetchPublicSupplement({
   timeoutMs = 30_000,
   maxLength = MAX_TEXT_LENGTH,
 } = {}) {
-  const exactUrl = httpsUrl(url)
-  if (!exactUrl) throw new Error('Public supplement URL must use HTTPS.')
+  const exactUrl = publicHttpsUrl(url)
   try {
     const response = await fetchImpl(exactUrl, {
       method: 'GET',
+      redirect: 'manual',
       headers: {
         Accept: 'text/html,application/xhtml+xml,application/json,application/atom+xml,application/rss+xml,text/plain',
         'User-Agent': 'ReHoYo/0.1 public-research-client',
       },
       signal: combineSignal(signal, timeoutMs),
     })
+    if (response.url && httpsUrl(response.url) !== exactUrl) {
+      throw new ResearchProviderError('webfetch', 0, 'Public supplement response did not preserve the exact URL.')
+    }
     await assertResponse(response, 'webfetch')
     return {
       url: exactUrl,
@@ -402,9 +461,9 @@ async function postBigModelJson({ endpoint, apiKey, body, fetchImpl, signal, tim
   }
 }
 
-function normalizedExpression(value) {
-  const original = clean(value?.original, 2_000)
-  if (!original) return null
+function normalizedExpression(value, verifiedCorpus) {
+  const original = verbatimText(value?.original, 2_000)
+  if (!original.trim() || !verifiedCorpus.some((source) => source.includes(original))) return null
   return {
     original,
     translatedZh: clean(value?.translatedZh, 2_000) || original,
@@ -430,13 +489,26 @@ export async function judgePageWithBigModel({
   signal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
-  const browserText = rawText(page?.text || page?.bodyText || page?.extractedText, MAX_TEXT_LENGTH)
+  const candidateUrl = httpsUrl(candidate?.url)
+  if (!candidateUrl) throw new Error('BigModel page judgment requires a valid HTTPS candidate URL.')
+  const browserText = verbatimText(page?.text || page?.bodyText || page?.extractedText, MAX_TEXT_LENGTH)
   const browserComments = (Array.isArray(comments) ? comments : [])
-    .map((comment) => rawText(typeof comment === 'string' ? comment : comment?.text, 4_000))
-    .filter(Boolean)
+    .map((comment) => verbatimText(typeof comment === 'string' ? comment : comment?.text, 4_000))
+    .filter((comment) => comment.trim())
     .slice(0, 100)
-  if (!browserText && !browserComments.length) {
+  if (!browserText.trim() && !browserComments.length) {
     throw new Error('BigModel page judgment requires browser-observed text or comments.')
+  }
+  let supplementText = ''
+  if (supplement !== undefined && supplement !== null) {
+    if (!supplement || typeof supplement !== 'object' || Array.isArray(supplement)) {
+      throw new Error('BigModel page supplement must be a {url,text} object.')
+    }
+    const supplementUrl = httpsUrl(supplement.url)
+    if (!supplementUrl || supplementUrl !== candidateUrl) {
+      throw new Error('BigModel page supplement URL must exactly match candidate URL.')
+    }
+    supplementText = verbatimText(supplement.text, MAX_TEXT_LENGTH)
   }
 
   const payload = await postBigModelJson({
@@ -458,14 +530,13 @@ export async function judgePageWithBigModel({
             region: clean(region, 30),
             researchRequest: request ?? {},
             candidate: {
-              url: httpsUrl(candidate?.url),
-              title: clean(candidate?.title, 500),
+              url: candidateUrl,
             },
             browserObservation: {
               text: browserText,
               comments: browserComments,
             },
-            supplement: rawText(supplement, MAX_TEXT_LENGTH),
+            supplement: supplementText ? { url: candidateUrl, text: supplementText } : null,
             outputSchema: {
               relevant: 'boolean',
               containsPlayerExpression: 'boolean',
@@ -482,12 +553,16 @@ export async function judgePageWithBigModel({
   })
 
   const parsed = parseJsonObject(payload?.choices?.[0]?.message?.content, 'BigModel page judgment')
+  const verifiedCorpus = [browserText, ...browserComments, supplementText].filter((source) => source.length > 0)
+  const expressions = (Array.isArray(parsed.expressions) ? parsed.expressions : [])
+    .map((expression) => normalizedExpression(expression, verifiedCorpus))
+    .filter(Boolean)
   return {
     relevant: parsed.relevant === true,
-    containsPlayerExpression: parsed.containsPlayerExpression === true,
+    containsPlayerExpression: parsed.containsPlayerExpression === true && expressions.length > 0,
     needsSupplement: parsed.needsSupplement === true,
     reason: clean(parsed.reason, 1_000),
-    expressions: (Array.isArray(parsed.expressions) ? parsed.expressions : []).map(normalizedExpression).filter(Boolean),
+    expressions,
   }
 }
 
@@ -527,6 +602,7 @@ export function createGlmResearchPlanner({
       if (!message || !Array.isArray(message.tool_calls) || !message.tool_calls.length) {
         throw new Error('GLM research planner did not return a function tool call.')
       }
+      parseResearchToolCall(message)
       return message
     },
   }

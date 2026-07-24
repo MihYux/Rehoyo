@@ -11,6 +11,7 @@ import {
   parseNiconicoCandidates,
   parseRedditRssCandidates,
 } from '../../electron/research-provider-adapters.mjs'
+import { getResearchToolSchemas } from '../../electron/research-tools.mjs'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -211,6 +212,43 @@ describe('research provider adapters', () => {
     ])
   })
 
+  it('normalizes WebFetch TimeoutError failures even when another sub-route returns no candidates', async () => {
+    const provider = createWebFetchDiscoveryProvider({
+      fetchImpl: vi.fn(async (url: string | URL | Request) => {
+        if (String(url).startsWith('https://search.brave.com/search')) return textResponse('<html>No result</html>')
+        throw new DOMException('request timed out', 'TimeoutError')
+      }),
+    })
+
+    await expect(provider({
+      region: 'WEST',
+      action: { query: 'Penacony comments', language: 'en-US', purpose: 'player reactions' },
+    })).rejects.toMatchObject({
+      name: 'ResearchProviderError',
+      provider: 'webfetch',
+      status: 0,
+      retryable: true,
+    })
+  })
+
+  it('keeps successful WebFetch candidates when a parallel regional route fails', async () => {
+    const provider = createWebFetchDiscoveryProvider({
+      fetchImpl: vi.fn(async (url: string | URL | Request) => {
+        if (String(url).startsWith('https://search.brave.com/search')) {
+          return textResponse('<div class="snippet" data-pos="0" data-type="web"><a href="https://example.com/player-thread"><div class="title">Player thread</div></a></div>')
+        }
+        throw new DOMException('request timed out', 'TimeoutError')
+      }),
+    })
+
+    await expect(provider({
+      region: 'WEST',
+      action: { query: 'Penacony comments', language: 'en-US', purpose: 'player reactions' },
+    })).resolves.toEqual({
+      candidates: [expect.objectContaining({ url: 'https://example.com/player-thread' })],
+    })
+  })
+
   it('fetches supplement text only from the exact public HTTPS URL and never labels it as evidence', async () => {
     const fetchImpl = vi.fn(async () => textResponse('<article>Visible public body</article>'))
     const result = await fetchPublicSupplement({
@@ -222,6 +260,31 @@ describe('research provider adapters', () => {
     expect(result).toMatchObject({ url: 'https://example.com/public-thread', text: '<article>Visible public body</article>' })
     expect(result).not.toHaveProperty('evidence')
     await expect(fetchPublicSupplement({ url: 'http://example.com/insecure', fetchImpl })).rejects.toThrow(/HTTPS/)
+  })
+
+  it.each([
+    'https://localhost/private',
+    'https://127.0.0.1/private',
+    'https://10.1.2.3/private',
+    'https://169.254.10.20/private',
+    'https://[fd00::1]/private',
+    'https://[fe80::1]/private',
+  ])('rejects non-public supplement host %s before making a request', async (url) => {
+    const fetchImpl = vi.fn(async () => textResponse('private data'))
+    await expect(fetchPublicSupplement({ url, fetchImpl })).rejects.toThrow(/public/i)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('uses manual redirects and rejects a response whose final URL differs from the exact input URL', async () => {
+    const response = textResponse('redirected body')
+    Object.defineProperty(response, 'url', { value: 'https://redirected.example/thread' })
+    const fetchImpl = vi.fn(async () => response)
+
+    await expect(fetchPublicSupplement({
+      url: 'https://example.com/public-thread',
+      fetchImpl,
+    })).rejects.toThrow(/exact URL/i)
+    expect(fetchImpl).toHaveBeenCalledWith('https://example.com/public-thread', expect.objectContaining({ redirect: 'manual' }))
   })
 
   it('sends browser-observed text to BigModel JSON judgment and parses evidence expressions', async () => {
@@ -262,6 +325,7 @@ describe('research provider adapters', () => {
     const body = JSON.parse(String(init?.body))
     expect(body).toMatchObject({ model: 'glm-5.2', response_format: { type: 'json_object' } })
     expect(body.messages[1].content).toContain('Penacony is beautiful')
+    expect(body.messages[1].content).not.toContain('"title":"Thread"')
     expect(judgment).toMatchObject({
       relevant: true,
       containsPlayerExpression: true,
@@ -276,6 +340,62 @@ describe('research provider adapters', () => {
       comments: [],
       fetchImpl,
     })).rejects.toThrow(/browser-observed/i)
+  })
+
+  it('keeps only verbatim model expressions from browser text or a verified same-URL supplement', async () => {
+    const browserOriginal = 'Player  says:\nslow pacing.'
+    const supplementOriginal = 'RSS player: great soundtrack.'
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => jsonResponse({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            relevant: true,
+            containsPlayerExpression: true,
+            needsSupplement: false,
+            reason: 'Found reactions.',
+            expressions: [
+              { original: browserOriginal, sentiment: 'negative', confidence: 0.9 },
+              { original: supplementOriginal, sentiment: 'positive', confidence: 0.9 },
+              { original: 'Player says: slow pacing.', sentiment: 'negative', confidence: 0.8 },
+              { original: 'The combat is universally loved.', sentiment: 'positive', confidence: 0.8 },
+            ],
+          }),
+        },
+      }],
+    }))
+
+    const judgment = await judgePageWithBigModel({
+      apiKey: 'glm-secret',
+      fetchImpl,
+      region: 'WEST',
+      request: { gameName: 'Honkai: Star Rail', versionLabel: '2.0' },
+      candidate: { url: 'https://example.com/thread', title: 'SEARCH RESULT TITLE MUST NOT BE SENT' },
+      page: { text: browserOriginal },
+      comments: [],
+      supplement: { url: 'https://example.com/thread', text: supplementOriginal },
+    })
+
+    expect(judgment.expressions.map((expression) => expression.original)).toEqual([
+      browserOriginal,
+      supplementOriginal,
+    ])
+    const [, init] = fetchImpl.mock.calls[0]
+    expect(String(init?.body)).not.toContain('SEARCH RESULT TITLE MUST NOT BE SENT')
+  })
+
+  it('rejects supplement text whose normalized URL does not exactly match the candidate URL', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ choices: [] }))
+    await expect(judgePageWithBigModel({
+      apiKey: 'glm-secret',
+      fetchImpl,
+      region: 'WEST',
+      request: {},
+      candidate: { url: 'https://example.com/thread' },
+      page: { text: 'Observed browser text.' },
+      comments: [],
+      supplement: { url: 'https://example.com/other', text: 'Untrusted supplement.' },
+    })).rejects.toThrow(/supplement URL must exactly match candidate URL/i)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('passes the strict tool schema to GLM and returns message.tool_calls instead of parsing content JSON', async () => {
@@ -298,7 +418,7 @@ describe('research provider adapters', () => {
         message: {
           role: 'assistant',
           content: '{"type":"unsupported_content_action"}',
-          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'search_web', arguments: '{"query":"new query"}' } }],
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'search_web', arguments: '{"query":"new query","language":"ja-JP","purpose":"find new player reactions"}' } }],
         },
       }],
     }))
@@ -318,5 +438,36 @@ describe('research provider adapters', () => {
     expect(body.tool_choice).toBe('required')
     expect(message.tool_calls[0].function.name).toBe('search_web')
     expect(message).toHaveProperty('content', '{"type":"unsupported_content_action"}')
+  })
+
+  it.each([
+    {
+      label: 'unknown action',
+      toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'invent_evidence', arguments: '{}' } }],
+      message: /unsupported research action/i,
+    },
+    {
+      label: 'multiple actions',
+      toolCalls: [
+        { id: 'call_1', type: 'function', function: { name: 'finish_region', arguments: '{"reason":"done"}' } },
+        { id: 'call_2', type: 'function', function: { name: 'finish_region', arguments: '{"reason":"also done"}' } },
+      ],
+      message: /exactly one function tool call/i,
+    },
+    {
+      label: 'invalid registered action arguments',
+      toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'search_web', arguments: '{"query":"x"}' } }],
+      message: /search_web/i,
+    },
+  ])('rejects $label through the canonical research-tool parser', async ({ toolCalls, message }) => {
+    const planner = createGlmResearchPlanner({
+      apiKey: 'glm-secret',
+      toolSchemas: getResearchToolSchemas(),
+      fetchImpl: vi.fn(async () => jsonResponse({
+        choices: [{ message: { role: 'assistant', content: null, tool_calls: toolCalls } }],
+      })),
+    })
+
+    await expect(planner.nextAction({ region: 'WEST' })).rejects.toThrow(message)
   })
 })

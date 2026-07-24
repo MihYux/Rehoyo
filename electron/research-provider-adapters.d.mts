@@ -93,7 +93,7 @@ export function judgePageWithBigModel(input: {
   candidate: { url: string; title?: string }
   page: { text?: string; bodyText?: string; extractedText?: string }
   comments?: Array<string | { text?: string }>
-  supplement?: string
+  supplement?: { url: string; text: string }
   signal?: AbortSignal
   timeoutMs?: number
 }): Promise<PageJudgment>
