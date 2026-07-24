@@ -60,6 +60,8 @@ export interface AnalysisEvent {
 
 export interface EvidenceRecord {
   id: string
+  runId?: string
+  role?: 'player'
   source: string
   sourceType: 'community' | 'video' | 'forum' | 'store'
   region: Exclude<RegionCode, 'GLOBAL'>
@@ -78,6 +80,26 @@ export interface EvidenceRecord {
   synthetic: false
   contentKind?: 'comment' | 'post'
   discoveryProvider?: 'direct' | 'bigmodel' | 'brave'
+}
+
+export interface RegionResearchCoverage {
+  evidence: number
+  target: number
+  domains: number
+  attempts: number
+  reached: boolean
+  exhausted: boolean
+}
+
+export interface RegionalResearchCoverage {
+  status: 'running' | 'incomplete' | 'complete'
+  regions: Record<Exclude<RegionCode, 'GLOBAL'>, RegionResearchCoverage>
+  totalEvidence: number
+  globalDomains: number
+  targetGlobalDomains: number
+  targetReached: boolean
+  canResume: boolean
+  limitations: string[]
 }
 
 export interface TrendPoint {
@@ -173,6 +195,12 @@ export interface AnalysisPreset {
     browserPagesObserved?: number
     ragDocuments?: number
     ragChunks?: number
+    status?: RegionalResearchCoverage['status']
+    regions?: RegionalResearchCoverage['regions']
+    globalDomains?: number
+    targetGlobalDomains?: number
+    canResume?: boolean
+    limitations?: string[]
   }
 }
 
