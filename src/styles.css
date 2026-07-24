@@ -2103,9 +2103,18 @@ body { overflow-x: hidden; }
 .release-assistant-panel article { margin: 18px 20px 0; padding: 18px; border-left: 3px solid var(--release-accent); background: var(--release-soft); }
 .release-assistant-panel article p { margin: 8px 0 14px; line-height: 1.7; }
 .release-assistant-panel article button { display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: var(--release-accent); font-size: 11px; }
+.release-assistant-thread { display: grid; max-height: 340px; overflow-y: auto; }
+.release-assistant-thread article > small { display: block; overflow: hidden; margin-bottom: 12px; color: var(--release-muted); font: 500 9px 'IBM Plex Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.release-assistant-thread article > header { display: flex; align-items: center; justify-content: space-between; }
+.release-assistant-thread article > header em { color: var(--release-safe); font: 500 8px 'IBM Plex Mono', monospace; font-style: normal; }
+.release-assistant-markdown { margin: 9px 0 14px; color: var(--release-ink); font-size: 12px; line-height: 1.7; }
+.release-assistant-markdown > :first-child { margin-top: 0; }
+.release-assistant-markdown > :last-child { margin-bottom: 0; }
+.release-assistant-error { padding: 8px 10px; background: #fbf0f2; color: var(--release-risk); font-size: 10px; }
 .release-assistant-panel form { display: grid; grid-template-columns: minmax(0, 1fr) 42px; margin: 20px; border: 1px solid var(--release-line); }
 .release-assistant-panel form input { min-width: 0; height: 46px; padding: 0 13px; border: 0; outline: 0; }
 .release-assistant-panel form button { display: grid; place-items: center; border: 0; background: var(--release-accent); color: #fff; }
+.release-assistant-panel form button:disabled { cursor: not-allowed; background: #aac8d0; }
 .release-assistant-panel > small { padding: 0 20px 20px; color: var(--release-muted); line-height: 1.6; }
 .release-workspace-status small { overflow: hidden; color: var(--release-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .research-coverage-summary { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 18px; border: 1px solid var(--release-line); background: var(--release-paper); }
