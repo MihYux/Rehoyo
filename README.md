@@ -102,6 +102,8 @@ npm install
 npm run dev
 ```
 
+`npm install` 会通过 Playwright 安装与当前版本匹配的 Chromium，保证无头研究在新机器上可直接运行。浏览器只在后台执行公开网页观察，不会打开普通浏览器窗口。
+
 `npm run dev` 会打开 **Electron 桌面窗口**，不会自动打开浏览器。只要本机尚未通过 App 保存有效连接，启动时就会显示全屏连接页，让用户输入 GLM API Key 与端点：
 
 ```text
