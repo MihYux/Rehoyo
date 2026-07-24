@@ -5,6 +5,7 @@ export type Sentiment = 'positive' | 'neutral' | 'negative'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type TaskStatus = 'running' | 'completed' | 'failed'
 export type AgentStatus = 'locked' | 'queued' | 'running' | 'handoff' | 'completed' | 'failed'
+export type EvidenceLanguage = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'ko-KR' | 'en-US' | 'fr-FR' | 'de-DE' | 'ru-RU' | 'es-ES' | 'pt-BR'
 
 export interface GameIdentity {
   id: string
@@ -49,7 +50,7 @@ export interface EvidenceRecord {
   source: string
   sourceType: 'community' | 'video' | 'forum' | 'store'
   region: Exclude<RegionCode, 'GLOBAL'>
-  language: 'zh-CN' | 'ja-JP' | 'en-US'
+  language: EvidenceLanguage
   author: string
   excerptOriginal: string
   excerptZh: string

@@ -5,7 +5,7 @@ import type {
   RegionCode,
 } from '../domain/types'
 
-const researchSources = ['Reddit RSS', 'Niconico Snapshot', 'BigModel Web Search']
+const researchSources = ['30+ 个站点限定搜索', 'Reddit RSS', 'Niconico Snapshot']
 
 function buildAgents(durationMs: number): AgentDefinition[] {
   return [
@@ -13,7 +13,7 @@ function buildAgents(durationMs: number): AgentDefinition[] {
       id: 'research',
       name: '社区研究 Agent',
       englishName: 'COMMUNITY RESEARCH',
-      objective: '实时检索公开网页与公开搜索接口，只接收带可验证 URL 的来源记录。',
+      objective: '按地区检索 30+ 个公开站点与公开搜索接口，只接收带可验证 URL 的来源记录。',
       startOffsetMs: 0,
       endOffsetMs: Math.round(durationMs * 0.42),
       sources: researchSources,

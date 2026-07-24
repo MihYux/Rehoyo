@@ -21,7 +21,7 @@
 
 ReHoYo 将传统的“查看最终 AI 总结”变成可观察的多 Agent 研究流程。用户可以创建一次全球玩家分析任务，并实时查看四名 Agent 如何采集证据、分析情绪、比较地区差异并生成版本策略。
 
-- **社区研究 Agent**：检索限定 Subreddit 的 Reddit RSS、Niconico 官方 Snapshot Search，以及公开中文社区页面。
+- **社区研究 Agent**：按地区检索 37 个公开站点，并结合限定 Subreddit 的 Reddit RSS 与 Niconico 官方 Snapshot Search。
 - **玩家情绪 Agent**：识别正面、负面与中性观点，并追踪情绪背后的具体成因。
 - **地区差异 Agent**：比较中国、日本和欧美玩家的关注重点、语言差异与文化语境。
 - **策略建议 Agent**：综合上游证据，输出版本内容、宣传、本地化和风险控制建议。
@@ -87,11 +87,20 @@ npm run check      # 单元测试与生产构建
 
 配置 GLM 后，任务大厅启用真实研究。社区 Agent 先检索公开材料，情绪与地区 Agent 在证据到达后并行分析，策略 Agent 最后综合；完成报告及顾问回答全部基于同一批 `synthetic: false` 证据。任何检索、模型或证据完整性校验失败都会明确报错并停止任务。
 
-当前公开来源：
+当前来源目录包含 37 个公开站点；BigModel Web Search 会按语言与地区拆成 13 组 `site:` 限定查询，返回结果还必须再次通过批次域名、游戏、版本、发布日期和玩家体验语义过滤。目录不是样本量：只有本次真实命中且保留 HTTPS URL 的页面才会进入证据与报告。
+
+| 市场 | 定向检查的公开来源 |
+| --- | --- |
+| 中国大陆 | Bilibili、米游社、百度贴吧、TapTap、NGA、知乎、17173、游民星空 |
+| 日本 | Niconico、5ch、Yahoo!知恵袋、GameWith、note |
+| 全球 / 北美 | HoYoPlay、HoYoLAB、YouTube、Reddit、Steam Community、Google Play、App Store、GameFAQs、ResetEra、Metacritic、X、Twitch |
+| 中国台湾 / 韩国 | 巴哈姆特、PTT、Naver Cafe、DCInside、Inven |
+| 欧洲 / 俄罗斯 / 拉美 | Jeuxvideo.com、MeinMMO、DTF、VK、3DJuegos、Vandal、Adrenaline |
 
 - **Reddit**：限定到对应游戏 Subreddit 的公开 Atom RSS，按版本别名与发布日期窗口过滤。
 - **Niconico**：官方 Snapshot Search API 返回的公开视频标题、简介、标签与互动计数。
-- **中文社区**：BigModel Web Search 返回的 Bilibili、TapTap、米游社、HoYoLAB、NGA、贴吧和知乎等允许域名页面。
+- **其余站点**：通过站点限定的公开网页搜索发现页面，再按原始域名严格验收；站点未命中时显示 `0`，不会补造评论。
+- **HoYoPlay**：只作为官方版本上下文被检查，不会混入玩家情绪样本。
 
 “证据”指可核验的公开帖子或页面标题、正文/摘要及 URL；Niconico 记录是视频页面元数据，并不等同于读取完整评论区。数量仅表示本次成功检索并通过过滤的页面数，不代表玩家总体、舆情占比或统计抽样。
 

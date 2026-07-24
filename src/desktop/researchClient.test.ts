@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  LIVE_SOURCE_CATALOG,
   applySentimentAnalysis,
+  buildSourceSearchPlans,
   decodeXmlEntities,
   isVersionRelevant,
   isPublishedInVersionWindow,
@@ -11,6 +13,7 @@ import {
   parseNiconicoSnapshot,
   runLiveResearch,
   sanitizeResearchRequest,
+  sourceFromUrl,
 } from '../../electron/research-client.mjs'
 
 const searchResult = (title: string, link: string, content: string, date = '2024-08-30') => ({
@@ -36,6 +39,57 @@ function niconicoHtml(items: unknown[]) {
 }
 
 describe('live research agent orchestration', () => {
+  it('targets a broad, named source catalog across global player markets', () => {
+    expect(LIVE_SOURCE_CATALOG.length).toBeGreaterThanOrEqual(25)
+    expect(new Set(LIVE_SOURCE_CATALOG.map((source) => source.id)).size).toBe(LIVE_SOURCE_CATALOG.length)
+
+    const names = LIVE_SOURCE_CATALOG.map((source) => source.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'HoYoPlay',
+      '米游社',
+      'YouTube',
+      '百度贴吧',
+      'Bilibili',
+      'Niconico',
+      'Reddit',
+      'HoYoLAB',
+      '巴哈姆特',
+      'DCInside',
+      'Jeuxvideo.com',
+    ]))
+
+    const markets = new Set(LIVE_SOURCE_CATALOG.flatMap((source) => source.markets))
+    expect([...markets]).toEqual(expect.arrayContaining(['CN', 'JP', 'KR', 'TW', 'NA', 'EU', 'RU', 'GLOBAL']))
+    expect(sourceFromUrl('https://www.miyoushe.com/ys/article/123')).toBe('米游社')
+    expect(sourceFromUrl('https://tieba.baidu.com/p/123')).toBe('百度贴吧')
+    expect(sourceFromUrl('https://youtu.be/example')).toBe('YouTube')
+    expect(sourceFromUrl('https://gall.dcinside.com/mgallery/board/view/?id=onshinproject')).toBe('DCInside')
+  })
+
+  it('builds site-restricted searches that cover every web-discovered source', () => {
+    const request = sanitizeResearchRequest({
+      gameName: '原神',
+      versionLabel: '5.0',
+      versionTitle: '荣花与炎日之途',
+      regions: ['CN', 'JP', 'WEST'],
+    })
+    const plans = request.regions.flatMap((region) => buildSourceSearchPlans(request, region))
+    const queries = plans.map((plan) => plan.query).join(' ')
+    const plannedDomains = new Set(plans.flatMap((plan) => plan.domains))
+    const webDomains = LIVE_SOURCE_CATALOG
+      .filter((source) => source.discovery === 'web')
+      .flatMap((source) => source.domains)
+
+    expect(plans.length).toBeGreaterThanOrEqual(8)
+    expect(webDomains.every((domain) => plannedDomains.has(domain))).toBe(true)
+    expect(queries).toContain('site:hoyoplay.hoyoverse.com')
+    expect(queries).toContain('site:miyoushe.com')
+    expect(queries).toContain('site:youtube.com')
+    expect(queries).toContain('site:tieba.baidu.com')
+    expect(queries).toContain('후기')
+    expect(queries).toContain('avis joueurs')
+  })
+
   it('decodes named, decimal, and hexadecimal entities from public feeds', () => {
     expect(decodeXmlEntities('submitted&#32;by&#x20;player &amp; team')).toBe('submitted by player & team')
   })
@@ -267,8 +321,13 @@ describe('live research agent orchestration', () => {
     expect(decodeURIComponent(redditUrl)).toContain('/r/Genshin_Impact/search.rss')
     expect(decodeURIComponent(redditUrl)).toContain('Natlan 5.0 feedback')
     expect(redditUrl).toContain('restrict_sr=on')
-    expect(calls.filter((call) => call.startsWith('retrieve:原神')).length).toBe(1)
-    expect(calls.some((call) => call.includes('纳塔 玩家 评价'))).toBe(true)
+    const webSearchCalls = calls.filter((call) => call.startsWith('retrieve:') && !call.endsWith('reddit') && !call.endsWith('niconico-snapshot'))
+    expect(webSearchCalls.length).toBeGreaterThanOrEqual(8)
+    expect(webSearchCalls.some((call) => call.includes('纳塔 玩家 评价'))).toBe(true)
+    expect(webSearchCalls.some((call) => call.includes('site:hoyoplay.hoyoverse.com'))).toBe(true)
+    expect(webSearchCalls.some((call) => call.includes('site:miyoushe.com'))).toBe(true)
+    expect(webSearchCalls.some((call) => call.includes('site:youtube.com'))).toBe(true)
+    expect(webSearchCalls.some((call) => call.includes('site:tieba.baidu.com'))).toBe(true)
     expect(events[0]).toMatchObject({ agentId: 'research', kind: 'status' })
     expect(sentimentSystem).toContain('"analyses"')
     expect(strategyPayload).toMatchObject({ derivedMetrics: { positivePercent: 33, negativePercent: 33, neutralPercent: 34 } })

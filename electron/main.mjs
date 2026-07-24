@@ -166,7 +166,7 @@ function registerIpcHandlers() {
     return {
       configured: config.configured,
       model: config.model,
-      retrieval: 'BigModel Web Search + Reddit RSS + Niconico Snapshot',
+      retrieval: '37 个公开站点 · 13 组地域检索 · Reddit / Niconico',
       searchEndpoint: new URL(config.searchBaseUrl).hostname,
     }
   })

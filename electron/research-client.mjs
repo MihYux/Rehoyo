@@ -51,16 +51,51 @@ const VERSION_WINDOWS = new Map([
   ['崩坏:星穹铁道|2.0', ['2024-01-26T00:00:00Z', '2024-03-26T23:59:59Z']],
   ['绝区零|1.1', ['2024-08-03T00:00:00Z', '2024-09-24T23:59:59Z']],
 ])
-const ALLOWED_CN_HOSTS = [
-  'bilibili.com',
-  'taptap.cn',
-  'miyoushe.com',
-  'mihoyo.com',
-  'hoyolab.com',
-  'nga.cn',
-  'tieba.baidu.com',
-  'zhihu.com',
-]
+
+export const LIVE_SOURCE_CATALOG = Object.freeze([
+  { id: 'bilibili', name: 'Bilibili', domains: ['bilibili.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'video', discovery: 'web', evidenceRole: 'player' },
+  { id: 'miyoushe', name: '米游社', domains: ['miyoushe.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'baidu-tieba', name: '百度贴吧', domains: ['tieba.baidu.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'taptap-cn', name: 'TapTap', domains: ['taptap.cn'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'nga', name: 'NGA', domains: ['nga.cn'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'zhihu', name: '知乎', domains: ['zhihu.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: '17173', name: '17173', domains: ['17173.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'gamersky', name: '游民星空', domains: ['gamersky.com'], regions: ['CN'], markets: ['CN'], language: 'zh-CN', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+
+  { id: 'niconico', name: 'Niconico', domains: ['nicovideo.jp'], regions: ['JP'], markets: ['JP'], language: 'ja-JP', sourceType: 'video', discovery: 'direct', evidenceRole: 'player' },
+  { id: '5ch', name: '5ch', domains: ['5ch.net'], regions: ['JP'], markets: ['JP'], language: 'ja-JP', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'yahoo-chiebukuro', name: 'Yahoo!知恵袋', domains: ['chiebukuro.yahoo.co.jp'], regions: ['JP'], markets: ['JP'], language: 'ja-JP', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'gamewith-jp', name: 'GameWith', domains: ['gamewith.jp'], regions: ['JP'], markets: ['JP'], language: 'ja-JP', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'note-jp', name: 'note', domains: ['note.com'], regions: ['JP'], markets: ['JP'], language: 'ja-JP', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+
+  { id: 'hoyoplay', name: 'HoYoPlay', domains: ['hoyoplay.hoyoverse.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'community', discovery: 'web', evidenceRole: 'context' },
+  { id: 'hoyolab', name: 'HoYoLAB', domains: ['hoyolab.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'video', discovery: 'web', evidenceRole: 'player' },
+  { id: 'reddit', name: 'Reddit', domains: ['reddit.com'], regions: ['WEST'], markets: ['NA', 'EU', 'GLOBAL'], language: 'en-US', sourceType: 'community', discovery: 'direct', evidenceRole: 'player' },
+  { id: 'steam-community', name: 'Steam Community', domains: ['steamcommunity.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'google-play', name: 'Google Play', domains: ['play.google.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'store', discovery: 'web', evidenceRole: 'player' },
+  { id: 'app-store', name: 'App Store', domains: ['apps.apple.com', 'itunes.apple.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'store', discovery: 'web', evidenceRole: 'player' },
+  { id: 'gamefaqs', name: 'GameFAQs', domains: ['gamefaqs.gamespot.com'], regions: ['WEST'], markets: ['NA'], language: 'en-US', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'resetera', name: 'ResetEra', domains: ['resetera.com'], regions: ['WEST'], markets: ['NA', 'EU'], language: 'en-US', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'metacritic', name: 'Metacritic', domains: ['metacritic.com'], regions: ['WEST'], markets: ['NA', 'EU'], language: 'en-US', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'x', name: 'X', domains: ['x.com', 'twitter.com'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'twitch', name: 'Twitch', domains: ['twitch.tv'], regions: ['WEST'], markets: ['GLOBAL'], language: 'en-US', sourceType: 'video', discovery: 'web', evidenceRole: 'player' },
+
+  { id: 'bahamut', name: '巴哈姆特', domains: ['gamer.com.tw'], regions: ['WEST'], markets: ['TW'], language: 'zh-TW', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'ptt', name: 'PTT', domains: ['ptt.cc'], regions: ['WEST'], markets: ['TW'], language: 'zh-TW', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'naver-cafe', name: 'Naver Cafe', domains: ['cafe.naver.com'], regions: ['WEST'], markets: ['KR'], language: 'ko-KR', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'dcinside', name: 'DCInside', domains: ['dcinside.com'], regions: ['WEST'], markets: ['KR'], language: 'ko-KR', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'inven', name: 'Inven', domains: ['inven.co.kr'], regions: ['WEST'], markets: ['KR'], language: 'ko-KR', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'jeuxvideo', name: 'Jeuxvideo.com', domains: ['jeuxvideo.com'], regions: ['WEST'], markets: ['EU'], language: 'fr-FR', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'mein-mmo', name: 'MeinMMO', domains: ['mein-mmo.de'], regions: ['WEST'], markets: ['EU'], language: 'de-DE', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'dtf', name: 'DTF', domains: ['dtf.ru'], regions: ['WEST'], markets: ['RU'], language: 'ru-RU', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: 'vk', name: 'VK', domains: ['vk.com'], regions: ['WEST'], markets: ['RU'], language: 'ru-RU', sourceType: 'community', discovery: 'web', evidenceRole: 'player' },
+  { id: '3djuegos', name: '3DJuegos', domains: ['3djuegos.com'], regions: ['WEST'], markets: ['EU'], language: 'es-ES', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'vandal', name: 'Vandal', domains: ['vandal.elespanol.com'], regions: ['WEST'], markets: ['EU'], language: 'es-ES', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+  { id: 'adrenaline', name: 'Adrenaline', domains: ['adrenaline.com.br'], regions: ['WEST'], markets: ['BR'], language: 'pt-BR', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
+])
+
+const SEARCH_BATCH_SIZE = 4
 
 function cleanString(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength)
@@ -195,37 +230,98 @@ function gameAlias(gameName) {
   return GAME_ALIASES.get(gameName) || gameName
 }
 
-function sourceFromUrl(url) {
-  const hostname = new URL(url).hostname.replace(/^www\./, '')
-  if (hostname.endsWith('reddit.com')) return 'Reddit'
-  if (hostname.endsWith('bilibili.com')) return 'Bilibili'
-  if (hostname.endsWith('youtube.com') || hostname === 'youtu.be') return 'YouTube'
-  if (hostname.endsWith('hoyolab.com')) return 'HoYoLAB'
-  if (hostname.endsWith('taptap.cn')) return 'TapTap'
-  if (hostname.endsWith('apps.apple.com') || hostname.endsWith('itunes.apple.com')) return 'App Store'
-  return hostname
-}
-
-function isAllowedCnSource(url) {
+function normalizedHostname(url) {
   try {
-    const hostname = new URL(url).hostname.replace(/^www\./, '')
-    return ALLOWED_CN_HOSTS.some((allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`))
+    return new URL(url).hostname.replace(/^www\./, '').toLocaleLowerCase()
   } catch {
-    return false
+    return ''
   }
 }
 
+function hostnameMatches(hostname, domain) {
+  return hostname === domain || hostname.endsWith(`.${domain}`)
+}
+
+function sourceDefinitionFromUrl(url) {
+  const hostname = normalizedHostname(url)
+  if (!hostname) return undefined
+  return LIVE_SOURCE_CATALOG.find((source) => source.domains.some((domain) => hostnameMatches(hostname, domain)))
+}
+
+export function sourceFromUrl(url) {
+  return sourceDefinitionFromUrl(url)?.name || normalizedHostname(url)
+}
+
 function sourceType(source) {
-  if (source === 'YouTube' || source === 'Bilibili') return 'video'
-  if (source === 'App Store') return 'store'
-  if (source === 'Reddit' || source === 'HoYoLAB' || source === 'TapTap') return 'community'
-  return 'forum'
+  return LIVE_SOURCE_CATALOG.find((item) => item.name === source)?.sourceType || 'forum'
 }
 
 function languageFor(region) {
   if (region === 'CN') return 'zh-CN'
   if (region === 'JP') return 'ja-JP'
   return 'en-US'
+}
+
+function localizedSearchBase(request, language) {
+  const key = `${request.gameName}|${request.versionLabel}`
+  if (language === 'zh-CN') {
+    return CHINESE_SEARCH_TERMS.get(key)
+      || `${request.gameName} ${request.versionLabel} ${request.versionTitle} 中国 玩家 评价 体验`.trim()
+  }
+  if (language === 'ja-JP') {
+    const terms = JAPANESE_SEARCH_TERMS.get(key) || [request.gameName, request.versionTitle]
+    return `${terms.join(' ')} ${request.versionLabel} 感想 評価 プレイ`.trim()
+  }
+
+  const western = WESTERN_SEARCH_TERMS.get(key)
+    || `${gameAlias(request.gameName)} ${request.versionLabel} ${request.versionTitle} feedback`.trim()
+  const localizedSuffix = {
+    'zh-TW': '玩家 心得 評價 體驗',
+    'ko-KR': '플레이어 후기 평가 반응',
+    'fr-FR': 'avis joueurs expérience',
+    'de-DE': 'Spieler Meinung Erfahrung',
+    'ru-RU': 'отзывы игроков впечатления',
+    'es-ES': 'opiniones jugadores experiencia',
+    'pt-BR': 'avaliação jogadores experiência',
+  }[language]
+  return `${western} ${localizedSuffix || 'player review experience'}`.trim()
+}
+
+export function buildSourceSearchPlans(request, region) {
+  const sources = LIVE_SOURCE_CATALOG.filter((source) => source.discovery === 'web' && source.regions.includes(region))
+  const byLanguage = new Map()
+  for (const source of sources) {
+    const group = byLanguage.get(source.language) || []
+    group.push(source)
+    byLanguage.set(source.language, group)
+  }
+
+  const plans = []
+  let planIndex = 0
+  for (const [language, languageSources] of byLanguage) {
+    for (let index = 0; index < languageSources.length; index += SEARCH_BATCH_SIZE) {
+      const batch = languageSources.slice(index, index + SEARCH_BATCH_SIZE)
+      const domains = [...new Set(batch.flatMap((source) => source.domains))]
+      const siteRestriction = domains.map((domain) => `site:${domain}`).join(' OR ')
+      const directEvidenceOffset = region === 'CN' ? 0 : 100
+      plans.push({
+        id: `${region.toLocaleLowerCase()}-${language.toLocaleLowerCase()}-${String(index / SEARCH_BATCH_SIZE + 1)}`,
+        region,
+        language,
+        sourceNames: batch.map((source) => source.name),
+        domains,
+        query: `${localizedSearchBase(request, language)} (${siteRestriction})`,
+        evidenceOffset: directEvidenceOffset + planIndex * 100,
+      })
+      planIndex += 1
+    }
+  }
+  return plans
+}
+
+function isSourceInPlan(url, plan) {
+  const hostname = normalizedHostname(url)
+  return Boolean(hostname) && plan.domains.some((domain) => hostnameMatches(hostname, domain))
 }
 
 function normalizeSearchText(value) {
@@ -273,6 +369,13 @@ export function isPlayerFeedbackResult(item) {
     'feedback', 'review', 'thoughts', 'opinion', 'experience', 'exploration', 'gameplay', 'combat', 'story', 'quest', 'character', 'pacing',
     '感想', 'レビュー', '実況', 'プレイ', '探索', '戦闘', 'ストーリー', '伝説任務', 'キャラ', 'ムアラニ', 'カチーナ', 'キィニチ', 'ピノコニー', 'ジェーン',
     '评价', '体验', '实测', '感受', '剧情', '探索', '战斗', '角色', '任务', '玛拉妮', '卡齐娜', '基尼奇', '匹诺康尼', '青衣',
+    '心得', '評價', '體驗', '劇情', '戰鬥', '角色',
+    '후기', '평가', '반응', '경험', '탐험', '전투', '스토리', '캐릭터',
+    'avis', 'expérience', 'jouabilité', 'histoire', 'personnage',
+    'meinung', 'erfahrung', 'bewertung', 'geschichte', 'charakter',
+    'отзыв', 'отзывы', 'впечатления', 'сюжет', 'персонаж',
+    'opinión', 'opiniones', 'experiencia', 'historia', 'personaje',
+    'avaliação', 'opinião', 'experiência', 'história', 'personagem',
   ]
   const experienceMatches = experienceTerms.filter((term) => haystack.includes(normalizeSearchText(term))).length
   return !metricsOnly && experienceMatches > 0
@@ -369,9 +472,8 @@ async function fetchNiconicoEvidence({ request, fetchImpl }) {
     }))
 }
 
-async function fetchWebSearchEvidence({ request, region, apiKey, config, fetchImpl }) {
-  const query = CHINESE_SEARCH_TERMS.get(`${request.gameName}|${request.versionLabel}`)
-    || `${request.gameName} ${request.versionLabel} ${request.versionTitle} 中国 玩家 评价 体验`.trim()
+async function fetchWebSearchEvidence({ request, plan, apiKey, config, fetchImpl }) {
+  const { region, query } = plan
   const response = await fetchImpl(`${config.searchBaseUrl || SEARCH_BASE_URL}/web_search`, {
     method: 'POST',
     headers: {
@@ -395,19 +497,21 @@ async function fetchWebSearchEvidence({ request, region, apiKey, config, fetchIm
   const results = Array.isArray(payload.search_result) ? payload.search_result : []
   return results
     .filter((item) => typeof item?.link === 'string' && item.link.startsWith('https://'))
-    .filter((item) => region !== 'CN' || isAllowedCnSource(item.link))
+    .filter((item) => isSourceInPlan(item.link, plan))
+    .filter((item) => sourceDefinitionFromUrl(item.link)?.evidenceRole === 'player')
     .filter((item) => isVersionRelevant(item, request))
     .filter((item) => isPublishedInVersionWindow(item.publish_date, request))
     .filter((item) => isPlayerFeedbackResult(item))
     .slice(0, 6)
     .map((item, index) => {
-      const source = sourceFromUrl(item.link)
+      const sourceDefinition = sourceDefinitionFromUrl(item.link)
+      const source = sourceDefinition?.name || sourceFromUrl(item.link)
       return {
-        id: `live-${region.toLocaleLowerCase()}-${String(index + 1).padStart(3, '0')}`,
+        id: `live-${region.toLocaleLowerCase()}-${String(plan.evidenceOffset + index + 1).padStart(3, '0')}`,
         source,
-        sourceType: sourceType(source),
+        sourceType: sourceDefinition?.sourceType || sourceType(source),
         region,
-        language: languageFor(region),
+        language: sourceDefinition?.language || languageFor(region),
         author: cleanString(item.media || source, 120) || source,
         title: cleanString(item.title, 300),
         url: item.link,
@@ -641,7 +745,7 @@ function buildReport(evidence, _regional, strategy) {
 
 function buildLiveAgents(durationMs) {
   return [
-    { id: 'research', name: '社区研究 Agent', englishName: 'COMMUNITY RESEARCH', objective: '实时检索公开网页、Reddit RSS 与 Niconico，并保留原始 URL。', startOffsetMs: 0, endOffsetMs: Math.round(durationMs * 0.42), sources: ['Reddit RSS', 'Niconico', 'BigModel Web Search'], outputs: ['真实来源 URL', '页面摘要', '检索状态'] },
+    { id: 'research', name: '社区研究 Agent', englishName: 'COMMUNITY RESEARCH', objective: '按地区检索 30+ 个公开站点、Reddit RSS 与 Niconico，并保留原始 URL。', startOffsetMs: 0, endOffsetMs: Math.round(durationMs * 0.42), sources: ['30+ 个站点限定搜索', 'Reddit RSS', 'Niconico Snapshot'], outputs: ['真实来源 URL', '页面摘要', '检索状态'] },
     { id: 'sentiment', name: '玩家情绪 Agent', englishName: 'SENTIMENT ANALYSIS', objective: '使用 GLM 对已检索证据逐条分类、翻译并提取原因主题。', startOffsetMs: Math.round(durationMs * 0.38), endOffsetMs: Math.round(durationMs * 0.7), sources: ['社区研究真实证据'], outputs: ['逐条情绪', '中文释义', '原因主题'] },
     { id: 'regional', name: '地区差异 Agent', englishName: 'REGIONAL ANALYSIS', objective: '使用 GLM 比较真实证据中的中、日、欧美关注点。', startOffsetMs: Math.round(durationMs * 0.38), endOffsetMs: Math.round(durationMs * 0.72), sources: ['分地区真实证据'], outputs: ['地区矩阵', '证据缺口', '文化语境'] },
     { id: 'strategy', name: '策略建议 Agent', englishName: 'STRATEGY SYNTHESIS', objective: '等待上游完成，以证据编号生成风险与建议。', startOffsetMs: Math.round(durationMs * 0.7), endOffsetMs: durationMs, sources: ['三个上游 Agent 输出'], outputs: ['争议风险', '优先级建议', '证据引用'] },
@@ -700,15 +804,25 @@ export async function runLiveResearch({
       return []
     }))
   }
-  for (const region of safeRequest.regions.filter((item) => item === 'CN')) {
-    retrievals.push(fetchWebSearchEvidence({ request: safeRequest, region, apiKey, config, fetchImpl }).then((items) => {
-      emit('research', 'research', 'source', `${region} 公开网页搜索返回 ${items.length} 条相关页面`, region === 'CN' ? 48 : 68, items.map((item) => item.id), { source: 'BigModel Web Search', region, evidenceRecords: items })
+  const searchPlans = safeRequest.regions.flatMap((region) => buildSourceSearchPlans(safeRequest, region))
+  searchPlans.forEach((plan, index) => {
+    retrievals.push(fetchWebSearchEvidence({ request: safeRequest, plan, apiKey, config, fetchImpl }).then((items) => {
+      const progress = Math.min(82, 34 + Math.round(((index + 1) / Math.max(1, searchPlans.length)) * 48))
+      emit('research', 'research', 'source', `${plan.region} · ${plan.sourceNames.join(' / ')}：命中 ${items.length} 条可验证玩家页面`, progress, items.map((item) => item.id), {
+        source: plan.sourceNames.join(' / '),
+        region: plan.region,
+        evidenceRecords: items,
+      })
       return items
     }).catch((error) => {
-      emit('research', 'research', 'risk', `${region} 搜索失败：${cleanString(error.message, 140)}`, 60, [], { source: 'BigModel Web Search', region, severity: 'high' })
+      emit('research', 'research', 'risk', `${plan.region} · ${plan.sourceNames.join(' / ')} 检索失败：${cleanString(error.message, 140)}`, 60, [], {
+        source: plan.sourceNames.join(' / '),
+        region: plan.region,
+        severity: 'medium',
+      })
       return []
     }))
-  }
+  })
   const evidence = (await Promise.all(retrievals)).flat()
   if (!evidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未生成替代评论。')
   assertVerifiedEvidence(evidence)

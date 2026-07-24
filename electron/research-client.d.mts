@@ -8,6 +8,37 @@ export interface LiveResearchRequest {
   regions: Exclude<RegionCode, 'GLOBAL'>[]
 }
 
+export interface LiveSourceDefinition {
+  id: string
+  name: string
+  domains: string[]
+  regions: LiveResearchRequest['regions']
+  markets: string[]
+  language: EvidenceRecord['language']
+  sourceType: EvidenceRecord['sourceType']
+  discovery: 'direct' | 'web'
+  evidenceRole: 'player' | 'context'
+}
+
+export interface SourceSearchPlan {
+  id: string
+  region: LiveResearchRequest['regions'][number]
+  language: EvidenceRecord['language']
+  sourceNames: string[]
+  domains: string[]
+  query: string
+  evidenceOffset: number
+}
+
+export const LIVE_SOURCE_CATALOG: readonly LiveSourceDefinition[]
+
+export function sourceFromUrl(url: string): string
+
+export function buildSourceSearchPlans(
+  request: LiveResearchRequest,
+  region: LiveResearchRequest['regions'][number],
+): SourceSearchPlan[]
+
 export function decodeXmlEntities(value: unknown): string
 
 export function parseRedditAtom(value: unknown): Array<{
