@@ -183,6 +183,7 @@ function registerIpcHandlers() {
         config: currentGlmConfig(),
         request,
         getApiKey: () => connectionManager.getApiKey(),
+        runSeed: runId,
         onEvent: (researchEvent) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send('rehoyo:research:event', { runId, event: researchEvent })

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react'
 import {
   HashRouter,
   Navigate,
@@ -11,9 +11,15 @@ import {
 import { startTask } from './domain/engine'
 import { isCompletedGroundedTask } from './domain/grounding'
 import { loadCompletedTasks, saveCompletedTask } from './domain/storage'
+import { createPlanVersion, deriveReleasePlan, type ReleaseProject } from './domain/release-project'
+import { loadReleaseProjects, saveReleaseProject } from './domain/release-storage'
 import type { AnalysisPreset, RuntimeTask } from './domain/types'
 import { ConnectionGate } from './features/connection/ConnectionGate'
 import { TaskLobby } from './features/lobby/TaskLobby'
+import { RegionalAnalysisRun } from './features/projects/RegionalAnalysisRun'
+import { ReleaseLobby } from './features/projects/ReleaseLobby'
+import { ReleaseProjectForm } from './features/projects/ReleaseProjectForm'
+import { ReleaseWorkspace } from './features/release-workspace/ReleaseWorkspace'
 import type { ReportTab } from './features/report/ReportDashboard'
 
 const TaskWorkspace = lazy(() =>
@@ -120,6 +126,40 @@ export function AppRoutes() {
   const navigate = useNavigate()
   const [session, setSession] = useState<ActiveSession | null>(null)
   const [recentTasks, setRecentTasks] = useState<RuntimeTask[]>(() => loadCompletedTasks())
+  const [projects, setProjects] = useState<ReleaseProject[]>(() => loadReleaseProjects())
+
+  const persistProject = useCallback((project: ReleaseProject) => {
+    saveReleaseProject(project)
+    setProjects(loadReleaseProjects())
+  }, [])
+
+  const handleCreateProject = (project: ReleaseProject) => {
+    persistProject(project)
+    navigate(`/projects/${encodeURIComponent(project.id)}/analyze`)
+  }
+
+  const handleOpenProject = (project: ReleaseProject) => {
+    navigate(project.currentPlan
+      ? `/projects/${encodeURIComponent(project.id)}/workspace?view=regions`
+      : `/projects/${encodeURIComponent(project.id)}/analyze`)
+  }
+
+  const handleResearchComplete = useCallback((project: ReleaseProject, preset: AnalysisPreset) => {
+    const plan = deriveReleasePlan(project, preset)
+    const draft = createPlanVersion(project.id, plan, project.planVersions)
+    const updated: ReleaseProject = {
+      ...project,
+      researchSnapshot: preset,
+      researchRunIds: [...new Set([...project.researchRunIds, preset.id])],
+      currentPlan: plan,
+      planVersions: [...project.planVersions, draft],
+      currentPlanVersionId: draft.id,
+      status: 'review_required',
+      updatedAt: new Date().toISOString(),
+    }
+    persistProject(updated)
+    navigate(`/projects/${encodeURIComponent(project.id)}/workspace?view=regions`)
+  }, [navigate, persistProject])
 
   const handleStart = (preset: AnalysisPreset) => {
     const task = startTask(preset)
@@ -148,12 +188,15 @@ export function AppRoutes() {
             <Route
               path="/"
               element={
-                <TaskLobby
-                  recentTasks={recentTasks}
-                  onStart={handleStart}
-                  onOpenReport={handleOpenReport}
-                />
+                <ReleaseLobby projects={projects} onCreate={() => navigate('/projects/new')} onOpen={handleOpenProject} />
               }
+            />
+            <Route path="/projects/new" element={<ReleaseProjectForm onCreate={handleCreateProject} />} />
+            <Route path="/projects/:projectId/analyze" element={<ProjectRoute projects={projects}>{(project) => <RegionalAnalysisRun project={project} onComplete={(preset) => handleResearchComplete(project, preset)} />}</ProjectRoute>} />
+            <Route path="/projects/:projectId/workspace" element={<ProjectRoute projects={projects}>{(project) => <ReleaseWorkspace project={project} onUpdate={persistProject} />}</ProjectRoute>} />
+            <Route
+              path="/legacy"
+              element={<TaskLobby recentTasks={recentTasks} onStart={handleStart} onOpenReport={handleOpenReport} />}
             />
             <Route
               path="/tasks/:taskId/run"
@@ -179,6 +222,18 @@ export function AppRoutes() {
       </div>
     </>
   )
+}
+
+function ProjectRoute({
+  projects,
+  children,
+}: {
+  projects: ReleaseProject[]
+  children: (project: ReleaseProject) => ReactNode
+}) {
+  const { projectId } = useParams()
+  const project = projects.find((item) => item.id === projectId)
+  return project ? children(project) : <Navigate replace to="/" />
 }
 
 export default function App() {

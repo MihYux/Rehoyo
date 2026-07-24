@@ -22,12 +22,26 @@ export interface LiveSourceDefinition {
 
 export interface SourceSearchPlan {
   id: string
+  sourceId: string
   region: LiveResearchRequest['regions'][number]
   language: EvidenceRecord['language']
   sourceNames: string[]
   domains: string[]
   query: string
+  queries: string[]
   evidenceOffset: number
+}
+
+export type ResearchProvider = 'bigmodel' | 'brave'
+
+export interface ResearchAttempt {
+  id: string
+  plan: SourceSearchPlan
+  provider: ResearchProvider
+  query: string
+  round: number
+  records: EvidenceRecord[]
+  error: string
 }
 
 export const LIVE_SOURCE_CATALOG: readonly LiveSourceDefinition[]
@@ -37,7 +51,36 @@ export function sourceFromUrl(url: string): string
 export function buildSourceSearchPlans(
   request: LiveResearchRequest,
   region: LiveResearchRequest['regions'][number],
+  runSeed?: string,
 ): SourceSearchPlan[]
+
+export function parseBraveSearchResults(value: unknown): Array<{
+  url: string
+  title: string
+  publishedAt: string
+  content: string
+  contentKind: 'comment' | 'post'
+}>
+
+export function isSearchResultVersionGrounded(
+  item: { title?: string; content?: string; url?: string; publish_date?: string; publishedAt?: string; published_at?: string },
+  request: LiveResearchRequest,
+): boolean
+
+export function collectResearchCoverage(options: {
+  plans: SourceSearchPlan[]
+  retrieve: (input: { plan: SourceSearchPlan; provider: ResearchProvider; query: string; round: number }) => Promise<EvidenceRecord[]>
+  minimumSites?: number
+  minimumEvidence?: number
+  concurrency?: number
+  providers?: ResearchProvider[]
+  onAttempt?: (attempt: ResearchAttempt, progress: { sitesAttempted: number; evidenceCount: number }) => void
+}): Promise<{
+  evidence: EvidenceRecord[]
+  attempts: ResearchAttempt[]
+  sitesAttempted: number
+  targetReached: boolean
+}>
 
 export function decodeXmlEntities(value: unknown): string
 
@@ -103,6 +146,14 @@ export function runLiveResearch(options: {
   getApiKey?: () => Promise<string>
   readKeyFile?: (path: string) => Promise<string>
   now?: () => number
+  runSeed?: string
+  coveragePolicy?: {
+    minimumSites?: number
+    minimumEvidence?: number
+    maxEvidence?: number
+    concurrency?: number
+    providers?: ResearchProvider[]
+  }
 }): Promise<AnalysisPreset>
 
 export const LIVE_SEARCH_BASE_URL: string

@@ -43,6 +43,11 @@ export interface AnalysisEvent {
   region?: RegionCode
   source?: string
   severity?: RiskLevel
+  evidenceRecords?: EvidenceRecord[]
+  searchProvider?: 'bigmodel' | 'brave'
+  query?: string
+  sitesAttempted?: number
+  evidenceCount?: number
 }
 
 export interface EvidenceRecord {
@@ -63,6 +68,8 @@ export interface EvidenceRecord {
   url: string
   retrievedAt: string
   synthetic: false
+  contentKind?: 'comment' | 'post'
+  discoveryProvider?: 'direct' | 'bigmodel' | 'brave'
 }
 
 export interface TrendPoint {
@@ -146,6 +153,15 @@ export interface AnalysisPreset {
   advisorAnswers: AdvisorAnswer[]
   isGeneric?: boolean
   dataMode: 'live'
+  researchCoverage?: {
+    targetSites: number
+    targetEvidence: number
+    sitesAttempted: number
+    evidenceCollected: number
+    attempts: number
+    providers: string[]
+    targetReached: boolean
+  }
 }
 
 export interface RuntimeTask {

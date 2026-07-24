@@ -3,7 +3,9 @@ import {
   LIVE_SOURCE_CATALOG,
   applySentimentAnalysis,
   buildSourceSearchPlans,
+  collectResearchCoverage,
   decodeXmlEntities,
+  isSearchResultVersionGrounded,
   isVersionRelevant,
   isPublishedInVersionWindow,
   isPlayerFeedbackResult,
@@ -11,6 +13,7 @@ import {
   parseRedditAtom,
   parseNiconicoSearch,
   parseNiconicoSnapshot,
+  parseBraveSearchResults,
   runLiveResearch,
   sanitizeResearchRequest,
   sourceFromUrl,
@@ -73,7 +76,7 @@ describe('live research agent orchestration', () => {
       versionTitle: '荣花与炎日之途',
       regions: ['CN', 'JP', 'WEST'],
     })
-    const plans = request.regions.flatMap((region) => buildSourceSearchPlans(request, region))
+    const plans = request.regions.flatMap((region) => buildSourceSearchPlans(request, region, 'run-alpha'))
     const queries = plans.map((plan) => plan.query).join(' ')
     const plannedDomains = new Set(plans.flatMap((plan) => plan.domains))
     const webDomains = LIVE_SOURCE_CATALOG
@@ -81,6 +84,8 @@ describe('live research agent orchestration', () => {
       .flatMap((source) => source.domains)
 
     expect(plans.length).toBeGreaterThanOrEqual(8)
+    expect(plans.every((plan) => plan.domains.length >= 1 && plan.sourceNames.length === 1)).toBe(true)
+    expect(plans.every((plan) => plan.queries.length >= 2)).toBe(true)
     expect(webDomains.every((domain) => plannedDomains.has(domain))).toBe(true)
     expect(queries).toContain('site:hoyoplay.hoyoverse.com')
     expect(queries).toContain('site:miyoushe.com')
@@ -88,6 +93,40 @@ describe('live research agent orchestration', () => {
     expect(queries).toContain('site:tieba.baidu.com')
     expect(queries).toContain('후기')
     expect(queries).toContain('avis joueurs')
+
+    const rotated = request.regions.flatMap((region) => buildSourceSearchPlans(request, region, 'run-beta'))
+    expect(rotated.map((plan) => plan.sourceId).sort()).toEqual(plans.map((plan) => plan.sourceId).sort())
+    expect(rotated.slice(0, 6).map((plan) => plan.sourceId)).not.toEqual(plans.slice(0, 6).map((plan) => plan.sourceId))
+  })
+
+  it('extracts real user replies exposed by a Brave results page', () => {
+    const html = `
+      <div class="snippet" data-pos="0" data-type="web">
+        <a href="https://www.reddit.com/r/HonkaiStarRail/comments/real/penacony/">
+          <div class="title">Penacony 2.0 story reactions</div>
+        </a>
+        <span class="t-secondary">February 8, 2024 -</span>
+        <div class="inline-qa-answer"><span>The dreamscape looked amazing, but the pacing was confusing.</span></div>
+        <div class="inline-qa-answer"><span>I loved the music and Black Swan, yet the ending felt rushed.</span></div>
+      </div>
+      <div class="snippet" data-pos="1" data-type="web">
+        <a href="https://news.example.com/not-player-feedback"><div class="title">News result</div></a>
+      </div>
+    `
+
+    expect(parseBraveSearchResults(html)).toEqual([
+      expect.objectContaining({
+        url: 'https://www.reddit.com/r/HonkaiStarRail/comments/real/penacony/',
+        title: 'Penacony 2.0 story reactions',
+        publishedAt: 'February 8, 2024',
+        content: 'The dreamscape looked amazing, but the pacing was confusing.',
+        contentKind: 'comment',
+      }),
+      expect.objectContaining({
+        content: 'I loved the music and Black Swan, yet the ending felt rushed.',
+        contentKind: 'comment',
+      }),
+    ])
   })
 
   it('decodes named, decimal, and hexadecimal entities from public feeds', () => {
@@ -122,9 +161,110 @@ describe('live research agent orchestration', () => {
     expect(isPublishedInVersionWindow('2024-08-16T08:00:00Z', request)).toBe(true)
     expect(isPublishedInVersionWindow('2025-03-30T18:25:04+09:00', request)).toBe(false)
     expect(isPublishedInVersionWindow('', request)).toBe(false)
+    expect(isSearchResultVersionGrounded({
+      title: '原神 5.0 纳塔玩家体验',
+      content: '玛拉妮探索很有趣，但剧情节奏偏快。',
+      publish_date: '',
+    }, request)).toBe(true)
+    expect(isSearchResultVersionGrounded({
+      title: '原神玩家日常讨论',
+      content: '今天的探索很有趣。',
+      publish_date: '',
+    }, request)).toBe(false)
+    expect(isSearchResultVersionGrounded({
+      title: '原神 5.0 纳塔玩家体验',
+      content: '玛拉妮探索很有趣。',
+      publish_date: '2025-03-30',
+    }, request)).toBe(false)
     expect(isPlayerFeedbackResult({ title: 'Natlan monthly revenue', content: 'SensorTower data about which game made more money' })).toBe(false)
     expect(isPlayerFeedbackResult({ title: 'Natlan revenue debate', content: 'SensorTower opinions about the player experience and which game made more money' })).toBe(false)
     expect(isPlayerFeedbackResult({ title: 'Natlan exploration feedback', content: 'The movement is fun, but the story pacing feels rushed.' })).toBe(true)
+  })
+
+  it('keeps expanding across engines and query variants until 30 sites and 30 records are covered', async () => {
+    const plans = Array.from({ length: 32 }, (_, index) => ({
+      id: `site-${index + 1}`,
+      sourceId: `source-${index + 1}`,
+      sourceNames: [`Source ${index + 1}`],
+      domains: [`source-${index + 1}.example`],
+      region: (index % 3 === 0 ? 'CN' : index % 3 === 1 ? 'JP' : 'WEST') as 'CN' | 'JP' | 'WEST',
+      language: 'en-US' as const,
+      query: `game feedback site:source-${index + 1}.example`,
+      queries: [
+        `game feedback site:source-${index + 1}.example`,
+        `game player comments site:source-${index + 1}.example`,
+      ],
+      evidenceOffset: index * 100,
+    }))
+    const attempts: Array<{ sourceId: string; provider: string; round: number }> = []
+
+    const result = await collectResearchCoverage({
+      plans,
+      minimumSites: 30,
+      minimumEvidence: 30,
+      concurrency: 12,
+      retrieve: vi.fn(async ({ plan, provider, round }) => {
+        attempts.push({ sourceId: plan.sourceId, provider, round })
+        if (round === 0) return []
+        return [{
+          id: `${plan.sourceId}-${provider}-${round}`,
+          source: plan.sourceNames[0],
+          sourceType: 'community' as const,
+          region: plan.region,
+          language: plan.language,
+          author: `${plan.sourceNames[0]} user`,
+          title: 'Version player feedback',
+          url: `https://${plan.domains[0]}/post/${round}`,
+          excerptOriginal: `A real indexed player comment from ${plan.sourceNames[0]}.`,
+          excerptZh: `A real indexed player comment from ${plan.sourceNames[0]}.`,
+          sentiment: 'neutral' as const,
+          topics: [],
+          confidence: 0,
+          engagement: 0,
+          publishedLabel: '公开页面',
+          retrievedAt: '2026-07-24T00:00:00.000Z',
+          synthetic: false as const,
+        }]
+      }),
+    })
+
+    expect(result.targetReached).toBe(true)
+    expect(result.sitesAttempted).toBeGreaterThanOrEqual(30)
+    expect(result.evidence.length).toBeGreaterThanOrEqual(30)
+    expect(attempts.some((attempt) => attempt.round === 1)).toBe(true)
+    expect(new Set(attempts.map((attempt) => attempt.provider))).toEqual(new Set(['brave', 'bigmodel']))
+    expect(attempts.slice(0, 30).every((attempt) => attempt.round === 0)).toBe(true)
+  })
+
+  it('reports an incomplete target after exhausting sources without inventing missing comments', async () => {
+    const plans = Array.from({ length: 30 }, (_, index) => ({
+      id: `sparse-${index}`,
+      sourceId: `sparse-source-${index}`,
+      sourceNames: [`Sparse Source ${index}`],
+      domains: [`sparse-${index}.example`],
+      region: 'WEST' as const,
+      language: 'en-US' as const,
+      query: `game feedback site:sparse-${index}.example`,
+      queries: [`game feedback site:sparse-${index}.example`],
+      evidenceOffset: index * 100,
+    }))
+    const result = await collectResearchCoverage({
+      plans,
+      minimumSites: 30,
+      minimumEvidence: 30,
+      retrieve: vi.fn(async ({ plan }) => plan.sourceId === 'sparse-source-0' ? [{
+        id: 'one-real-record', source: plan.sourceNames[0], sourceType: 'community' as const, region: plan.region,
+        language: plan.language, author: 'public user', excerptOriginal: 'One verifiable public comment.',
+        excerptZh: '一条可核验公开评论。', sentiment: 'neutral' as const, topics: [], confidence: 0,
+        engagement: 0, publishedLabel: '公开页面', url: 'https://sparse-0.example/post/1',
+        retrievedAt: '2026-07-24T00:00:00.000Z', synthetic: false as const,
+      }] : []),
+    })
+
+    expect(result.sitesAttempted).toBe(30)
+    expect(result.targetReached).toBe(false)
+    expect(result.evidence).toHaveLength(1)
+    expect(result.evidence[0]).toMatchObject({ id: 'one-real-record', synthetic: false })
   })
 
   it('parses Niconico server-response metadata into verifiable Japanese records', () => {
@@ -310,6 +450,12 @@ describe('live research agent orchestration', () => {
       fetchImpl,
       getApiKey: vi.fn(async () => 'private-test-key'),
       now: (() => { let value = 1_000; return () => (value += 250) })(),
+      coveragePolicy: {
+        minimumSites: LIVE_SOURCE_CATALOG.length,
+        minimumEvidence: 3,
+        maxEvidence: 3,
+        providers: ['bigmodel'],
+      },
       onEvent: (event) => events.push(event),
     })
 

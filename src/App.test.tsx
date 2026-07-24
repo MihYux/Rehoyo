@@ -37,14 +37,14 @@ describe('App routes', () => {
     }
   })
 
-  it('renders the task lobby at the root route', () => {
+  it('renders the release project lobby at the root route', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <AppRoutes />
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('heading', { name: /听见全球玩家/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /从看见全球玩家/ })).toBeInTheDocument()
   })
 
   it('redirects an unknown running task back to the lobby', async () => {
@@ -54,10 +54,10 @@ describe('App routes', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole('heading', { name: /听见全球玩家/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /从看见全球玩家/ })).toBeInTheDocument()
   })
 
-  it('starts a preset task and enters the agent workspace', async () => {
+  it('opens the version release brief from the primary action', async () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -65,9 +65,9 @@ describe('App routes', () => {
       </MemoryRouter>,
     )
 
-    await user.click(await screen.findByRole('button', { name: '启动真实研究' }))
+    await user.click(await screen.findByRole('button', { name: /创建版本发行项目/ }))
 
-    expect(await screen.findByRole('heading', { name: '全球地区声音与 Agent 协作' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '这次要发行什么？' })).toBeInTheDocument()
   })
 
   it('restores a completed report and unlocks the grounded advisor', async () => {
@@ -86,23 +86,20 @@ describe('App routes', () => {
     expect(await screen.findByRole('heading', { name: '版本决策顾问' })).toBeInTheDocument()
   })
 
-  it('keeps desktop navigation in the URL hash for packaged file loading', async () => {
+  it('keeps desktop release navigation in the URL hash for packaged file loading', async () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: '启动真实研究' }))
+    await user.click(await screen.findByRole('button', { name: /创建版本发行项目/ }))
 
     expect(window.location.pathname).toBe('/')
-    expect(window.location.hash).toMatch(/^#\/tasks\/[^/]+\/run$/)
+    expect(window.location.hash).toBe('#/projects/new')
   })
 
-  it('keeps the desktop route hash while navigating lobby sections', async () => {
-    const user = userEvent.setup()
+  it('keeps anchored product-path links on the release lobby', async () => {
     window.location.hash = '#/'
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Agent 团队' }))
-
-    expect(window.location.hash).toBe('#/')
+    expect(await screen.findByRole('link', { name: '产品路径' })).toHaveAttribute('href', '#release-flow')
   })
 })

@@ -95,7 +95,10 @@ export const LIVE_SOURCE_CATALOG = Object.freeze([
   { id: 'adrenaline', name: 'Adrenaline', domains: ['adrenaline.com.br'], regions: ['WEST'], markets: ['BR'], language: 'pt-BR', sourceType: 'forum', discovery: 'web', evidenceRole: 'player' },
 ])
 
-const SEARCH_BATCH_SIZE = 4
+const DEFAULT_MINIMUM_SITES = 30
+const DEFAULT_MINIMUM_EVIDENCE = 30
+const DEFAULT_SEARCH_CONCURRENCY = 12
+const SEARCH_PROVIDERS = Object.freeze(['brave', 'bigmodel'])
 
 function cleanString(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength)
@@ -152,6 +155,21 @@ export function decodeXmlEntities(value) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&amp;/g, '&')
+}
+
+function stableHash(value) {
+  let hash = 2166136261
+  for (const character of String(value ?? '')) {
+    hash ^= character.codePointAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function rotate(items, offset) {
+  if (!items.length) return []
+  const normalized = Math.abs(offset) % items.length
+  return [...items.slice(normalized), ...items.slice(0, normalized)]
 }
 
 function textFromHtml(value) {
@@ -287,36 +305,73 @@ function localizedSearchBase(request, language) {
   return `${western} ${localizedSuffix || 'player review experience'}`.trim()
 }
 
-export function buildSourceSearchPlans(request, region) {
-  const sources = LIVE_SOURCE_CATALOG.filter((source) => source.discovery === 'web' && source.regions.includes(region))
-  const byLanguage = new Map()
-  for (const source of sources) {
-    const group = byLanguage.get(source.language) || []
-    group.push(source)
-    byLanguage.set(source.language, group)
-  }
+function localizedQueryVariants(request, language) {
+  const base = localizedSearchBase(request, language)
+  const exact = [request.gameName, request.versionLabel, request.versionTitle].filter(Boolean).join(' ')
+  const variants = {
+    'zh-CN': [`${base} 玩家评论`, `${exact} 讨论 评价`, `${exact} 剧情 角色 强度 体验`],
+    'zh-TW': [`${base} 玩家留言`, `${exact} 討論 評價`, `${exact} 劇情 角色 體驗`],
+    'ja-JP': [`${base} コメント`, `${exact} 感想 評価`, `${exact} ストーリー キャラ 反応`],
+    'ko-KR': [`${base} 댓글`, `${exact} 유저 반응 후기`, `${exact} 스토리 캐릭터 평가`],
+    'fr-FR': [`${base} commentaires`, `${exact} avis communauté`, `${exact} histoire personnages réactions`],
+    'de-DE': [`${base} Kommentare`, `${exact} Community Meinung`, `${exact} Story Charakter Reaktionen`],
+    'ru-RU': [`${base} комментарии`, `${exact} отзывы сообщества`, `${exact} сюжет персонажи реакция`],
+    'es-ES': [`${base} comentarios`, `${exact} opiniones comunidad`, `${exact} historia personajes reacciones`],
+    'pt-BR': [`${base} comentários`, `${exact} opinião comunidade`, `${exact} história personagens reações`],
+    'en-US': [`${base} comments`, `${exact} community opinions`, `${exact} story character gameplay reactions`],
+  }[language] || [`${base} comments`, `${exact} player opinions`]
+  return [...new Set(variants.map((value) => value.trim()).filter(Boolean))]
+}
 
-  const plans = []
-  let planIndex = 0
-  for (const [language, languageSources] of byLanguage) {
-    for (let index = 0; index < languageSources.length; index += SEARCH_BATCH_SIZE) {
-      const batch = languageSources.slice(index, index + SEARCH_BATCH_SIZE)
-      const domains = [...new Set(batch.flatMap((source) => source.domains))]
-      const siteRestriction = domains.map((domain) => `site:${domain}`).join(' OR ')
-      const directEvidenceOffset = region === 'CN' ? 0 : 100
-      plans.push({
-        id: `${region.toLocaleLowerCase()}-${language.toLocaleLowerCase()}-${String(index / SEARCH_BATCH_SIZE + 1)}`,
-        region,
-        language,
-        sourceNames: batch.map((source) => source.name),
-        domains,
-        query: `${localizedSearchBase(request, language)} (${siteRestriction})`,
-        evidenceOffset: directEvidenceOffset + planIndex * 100,
-      })
-      planIndex += 1
+export function buildSourceSearchPlans(request, region, runSeed = 'default') {
+  const matchingSources = LIVE_SOURCE_CATALOG.filter((source) => source.discovery === 'web' && source.regions.includes(region))
+  const sources = rotate(matchingSources, stableHash(`${runSeed}:${region}`))
+  return sources.map((source, index) => {
+    const domains = [...new Set(source.domains)]
+    const siteRestriction = domains.map((domain) => `site:${domain}`).join(' OR ')
+    const queries = localizedQueryVariants(request, source.language)
+      .map((query) => `${query} (${siteRestriction})`)
+    return {
+      id: `${region.toLocaleLowerCase()}-${source.id}`,
+      sourceId: source.id,
+      region,
+      language: source.language,
+      sourceNames: [source.name],
+      domains,
+      query: queries[0],
+      queries,
+      evidenceOffset: (region === 'CN' ? 0 : region === 'JP' ? 10_000 : 20_000)
+        + matchingSources.findIndex((candidate) => candidate.id === source.id) * 100,
     }
-  }
-  return plans
+  })
+}
+
+export function parseBraveSearchResults(html) {
+  const source = String(html ?? '')
+  const starts = [...source.matchAll(/<div\s+class=["'][^"']*\bsnippet\b[^"']*["'][^>]*data-pos=["'][^"']+["'][^>]*data-type=["']web["'][^>]*>/gi)]
+  const records = []
+  starts.forEach((match, index) => {
+    const chunk = source.slice(match.index, starts[index + 1]?.index ?? source.length)
+    const url = decodeXmlEntities(chunk.match(/<a\s+[^>]*href=["'](https:\/\/[^"']+)["']/i)?.[1] || '')
+    const title = textFromHtml(chunk.match(/<div\s+class=["'][^"']*\btitle\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] || '')
+    const publishedAt = textFromHtml(chunk.match(/<span\s+class=["'][^"']*\bt-secondary\b[^"']*["'][^>]*>([\s\S]*?)\s+-\s*<\/span>/i)?.[1] || '')
+    const replies = [...chunk.matchAll(/<div\s+class=["'][^"']*\binline-qa-answer\b[^"']*["'][^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/gi)]
+      .map((reply) => textFromHtml(reply[1]))
+      .filter((value) => value.length >= 12)
+    const fallback = textFromHtml(
+      chunk.match(/<div\s+class=["'][^"']*(?:snippet-description|inline-qa-question)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] || '',
+    )
+    const contents = replies.length ? replies : fallback.length >= 24 ? [fallback] : []
+    if (!url.startsWith('https://') || !title || !contents.length) return
+    contents.slice(0, 5).forEach((content) => records.push({
+      url,
+      title,
+      publishedAt,
+      content,
+      contentKind: replies.length ? 'comment' : 'post',
+    }))
+  })
+  return records
 }
 
 function isSourceInPlan(url, plan) {
@@ -361,6 +416,13 @@ export function isPublishedInVersionWindow(value, request) {
   return timestamp >= Date.parse(window[0]) && timestamp <= Date.parse(window[1])
 }
 
+export function isSearchResultVersionGrounded(item, request) {
+  if (!isVersionRelevant(item, request)) return false
+  const publishedAt = cleanString(item?.publish_date || item?.publishedAt || item?.published_at, 100)
+  if (publishedAt) return isPublishedInVersionWindow(publishedAt, request)
+  return true
+}
+
 export function isPlayerFeedbackResult(item) {
   const haystack = normalizeSearchText(`${item?.title || ''} ${item?.content || ''}`)
   const metricsOnly = ['sensortower', 'revenue', 'sales chart', 'monthly income', 'made more money', 'grossing', '流水', '营收']
@@ -379,6 +441,101 @@ export function isPlayerFeedbackResult(item) {
   ]
   const experienceMatches = experienceTerms.filter((term) => haystack.includes(normalizeSearchText(term))).length
   return !metricsOnly && experienceMatches > 0
+}
+
+function evidenceDedupeKey(item) {
+  let canonicalUrl = cleanString(item?.url, 2_000)
+  try {
+    const url = new URL(canonicalUrl)
+    url.hash = ''
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(utm_|ref$|source$|share$)/i.test(key)) url.searchParams.delete(key)
+    }
+    canonicalUrl = url.toString()
+  } catch {
+    // Invalid URLs are rejected by assertVerifiedEvidence after collection.
+  }
+  return `${canonicalUrl}\n${normalizeSearchText(item?.excerptOriginal).slice(0, 500)}`
+}
+
+export async function collectResearchCoverage({
+  plans,
+  retrieve,
+  minimumSites = DEFAULT_MINIMUM_SITES,
+  minimumEvidence = DEFAULT_MINIMUM_EVIDENCE,
+  concurrency = DEFAULT_SEARCH_CONCURRENCY,
+  providers = SEARCH_PROVIDERS,
+  onAttempt = () => {},
+}) {
+  const safePlans = Array.isArray(plans) ? plans.filter((plan) => plan?.sourceId && Array.isArray(plan?.queries) && plan.queries.length) : []
+  const safeProviders = Array.isArray(providers) && providers.length
+    ? providers.filter((provider) => SEARCH_PROVIDERS.includes(provider))
+    : [...SEARCH_PROVIDERS]
+  if (!safePlans.length || !safeProviders.length || typeof retrieve !== 'function') {
+    throw new Error('Adaptive research requires source plans, providers, and a retrieval function.')
+  }
+
+  const siteIds = new Set()
+  const evidenceByKey = new Map()
+  const attempts = []
+  const maxRounds = Math.max(...safePlans.map((plan) => plan.queries.length))
+  const batchSize = Math.max(1, Math.min(12, Math.floor(Number(concurrency) || DEFAULT_SEARCH_CONCURRENCY)))
+
+  for (let round = 0; round < maxRounds; round += 1) {
+    for (let cursor = 0; cursor < safePlans.length; cursor += batchSize) {
+      const batch = safePlans.slice(cursor, cursor + batchSize)
+      const outcomes = await Promise.all(batch.map(async (plan, batchIndex) => {
+        const planIndex = cursor + batchIndex
+        const provider = safeProviders[(planIndex + round) % safeProviders.length]
+        const query = plan.queries[Math.min(round, plan.queries.length - 1)]
+        const attempt = {
+          id: `${plan.id}-${provider}-${round + 1}`,
+          plan,
+          provider,
+          query,
+          round,
+          records: [],
+          error: '',
+        }
+        try {
+          const records = await retrieve({ plan, provider, query, round })
+          attempt.records = Array.isArray(records) ? records : []
+        } catch (error) {
+          attempt.error = cleanString(error instanceof Error ? error.message : error, 220)
+        }
+        return attempt
+      }))
+
+      for (const attempt of outcomes) {
+        attempts.push(attempt)
+        siteIds.add(attempt.plan.sourceId)
+        for (const item of attempt.records) {
+          const key = evidenceDedupeKey(item)
+          if (key.trim() && !evidenceByKey.has(key)) evidenceByKey.set(key, item)
+        }
+        onAttempt(attempt, {
+          sitesAttempted: siteIds.size,
+          evidenceCount: evidenceByKey.size,
+        })
+      }
+
+      if (siteIds.size >= minimumSites && evidenceByKey.size >= minimumEvidence) {
+        return {
+          evidence: [...evidenceByKey.values()],
+          attempts,
+          sitesAttempted: siteIds.size,
+          targetReached: true,
+        }
+      }
+    }
+  }
+
+  return {
+    evidence: [...evidenceByKey.values()],
+    attempts,
+    sitesAttempted: siteIds.size,
+    targetReached: siteIds.size >= minimumSites && evidenceByKey.size >= minimumEvidence,
+  }
 }
 
 async function fetchRedditEvidence({ request, apiKey: _apiKey, fetchImpl }) {
@@ -472,8 +629,53 @@ async function fetchNiconicoEvidence({ request, fetchImpl }) {
     }))
 }
 
-async function fetchWebSearchEvidence({ request, plan, apiKey, config, fetchImpl }) {
-  const { region, query } = plan
+function searchEvidenceId(plan, provider, round, index) {
+  const providerOffset = provider === 'brave' ? 50 : 0
+  return `live-${plan.region.toLocaleLowerCase()}-${String(plan.evidenceOffset + round * 10 + providerOffset + index + 1).padStart(3, '0')}`
+}
+
+function mapSearchEvidence(items, { request, plan, provider, round }) {
+  return items
+    .map((item) => ({
+      ...item,
+      link: item?.link || item?.url,
+      content: item?.content || item?.description,
+      publish_date: item?.publish_date || item?.publishedAt,
+    }))
+    .filter((item) => typeof item?.link === 'string' && item.link.startsWith('https://'))
+    .filter((item) => isSourceInPlan(item.link, plan))
+    .filter((item) => sourceDefinitionFromUrl(item.link)?.evidenceRole === 'player')
+    .filter((item) => isSearchResultVersionGrounded(item, request))
+    .filter((item) => isPlayerFeedbackResult(item))
+    .slice(0, 8)
+    .map((item, index) => {
+      const sourceDefinition = sourceDefinitionFromUrl(item.link)
+      const source = sourceDefinition?.name || sourceFromUrl(item.link)
+      return {
+        id: searchEvidenceId(plan, provider, round, index),
+        source,
+        sourceType: sourceDefinition?.sourceType || sourceType(source),
+        region: plan.region,
+        language: sourceDefinition?.language || languageFor(plan.region),
+        author: cleanString(item.author || item.media || `${source} user`, 120) || `${source} user`,
+        title: cleanString(item.title, 300),
+        url: item.link,
+        excerptOriginal: cleanString(item.content || item.title, 1_600),
+        excerptZh: cleanString(item.content || item.title, 1_600),
+        sentiment: 'neutral',
+        topics: [],
+        confidence: 0,
+        engagement: clampNumber(item.engagement, 0, Number.MAX_SAFE_INTEGER, 0),
+        publishedLabel: cleanString(item.publish_date, 40) || '公开页面 · 日期未提供',
+        retrievedAt: new Date().toISOString(),
+        contentKind: item.contentKind === 'comment' ? 'comment' : 'post',
+        discoveryProvider: provider,
+        synthetic: false,
+      }
+    })
+}
+
+async function fetchBigModelSearchEvidence({ request, plan, query, round, apiKey, config, fetchImpl }) {
   const response = await fetchImpl(`${config.searchBaseUrl || SEARCH_BASE_URL}/web_search`, {
     method: 'POST',
     headers: {
@@ -484,8 +686,8 @@ async function fetchWebSearchEvidence({ request, plan, apiKey, config, fetchImpl
       search_engine: 'search_std',
       search_query: query,
       search_recency_filter: 'noLimit',
-      count: 10,
-      content_size: 'medium',
+      count: 20,
+      content_size: 'high',
     }),
     signal: AbortSignal.timeout(45_000),
   })
@@ -495,37 +697,27 @@ async function fetchWebSearchEvidence({ request, plan, apiKey, config, fetchImpl
   }
 
   const results = Array.isArray(payload.search_result) ? payload.search_result : []
-  return results
-    .filter((item) => typeof item?.link === 'string' && item.link.startsWith('https://'))
-    .filter((item) => isSourceInPlan(item.link, plan))
-    .filter((item) => sourceDefinitionFromUrl(item.link)?.evidenceRole === 'player')
-    .filter((item) => isVersionRelevant(item, request))
-    .filter((item) => isPublishedInVersionWindow(item.publish_date, request))
-    .filter((item) => isPlayerFeedbackResult(item))
-    .slice(0, 6)
-    .map((item, index) => {
-      const sourceDefinition = sourceDefinitionFromUrl(item.link)
-      const source = sourceDefinition?.name || sourceFromUrl(item.link)
-      return {
-        id: `live-${region.toLocaleLowerCase()}-${String(plan.evidenceOffset + index + 1).padStart(3, '0')}`,
-        source,
-        sourceType: sourceDefinition?.sourceType || sourceType(source),
-        region,
-        language: sourceDefinition?.language || languageFor(region),
-        author: cleanString(item.media || source, 120) || source,
-        title: cleanString(item.title, 300),
-        url: item.link,
-        excerptOriginal: cleanString(item.content || item.title, 1_600),
-        excerptZh: cleanString(item.content || item.title, 1_600),
-        sentiment: 'neutral',
-        topics: [],
-        confidence: 0,
-        engagement: 0,
-        publishedLabel: cleanString(item.publish_date, 40) || '公开页面',
-        retrievedAt: new Date().toISOString(),
-        synthetic: false,
-      }
-    })
+  return mapSearchEvidence(results, { request, plan, provider: 'bigmodel', round })
+}
+
+async function fetchBraveSearchEvidence({ request, plan, query, round, fetchImpl }) {
+  const url = new URL('https://search.brave.com/search')
+  url.searchParams.set('q', query)
+  url.searchParams.set('source', 'web')
+  const response = await fetchImpl(url, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'Accept-Language': `${plan.language},en;q=0.7`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36 ReHoYo/0.1',
+    },
+    signal: AbortSignal.timeout(45_000),
+  })
+  if (!response.ok) throw new Error(`Brave Search returned HTTP ${response.status}.`)
+  const html = await response.text()
+  if (/captcha|verify you are human|cf-turnstile/i.test(html)) {
+    throw new Error('Brave Search requested manual verification; this source round was paused rather than bypassed.')
+  }
+  return mapSearchEvidence(parseBraveSearchResults(html), { request, plan, provider: 'brave', round })
 }
 
 function parseJsonObject(content) {
@@ -752,6 +944,32 @@ function buildLiveAgents(durationMs) {
   ]
 }
 
+function interleavePlans(groups, seed) {
+  const queues = rotate(groups.map((group) => [...group]).filter((group) => group.length), stableHash(seed))
+  const result = []
+  while (queues.some((queue) => queue.length)) {
+    for (const queue of queues) {
+      const next = queue.shift()
+      if (next) result.push(next)
+    }
+  }
+  return result
+}
+
+function selectBalancedEvidence(evidence, limit) {
+  if (evidence.length <= limit) return evidence
+  const queues = ['CN', 'JP', 'WEST'].map((region) => evidence.filter((item) => item.region === region))
+  const selected = []
+  while (selected.length < limit && queues.some((queue) => queue.length)) {
+    for (const queue of queues) {
+      const next = queue.shift()
+      if (next) selected.push(next)
+      if (selected.length >= limit) break
+    }
+  }
+  return selected
+}
+
 export async function runLiveResearch({
   config,
   request,
@@ -760,6 +978,8 @@ export async function runLiveResearch({
   getApiKey,
   readKeyFile = (keyFile) => readFile(keyFile, 'utf8'),
   now = Date.now,
+  runSeed = 'default',
+  coveragePolicy = {},
 }) {
   if (!config?.configured) throw new Error('Real research requires a configured GLM key file.')
   const safeRequest = sanitizeResearchRequest(request)
@@ -784,10 +1004,14 @@ export async function runLiveResearch({
     return event
   }
 
-  emit('research', 'research', 'status', '社区研究 Agent 已启动真实公开网络检索', 4)
-  const retrievals = []
+  const minimumEvidence = Math.max(1, Math.floor(coveragePolicy.minimumEvidence || DEFAULT_MINIMUM_EVIDENCE))
+  const requestedMinimumSites = Math.max(1, Math.floor(coveragePolicy.minimumSites || DEFAULT_MINIMUM_SITES))
+  const maxEvidence = Math.max(minimumEvidence, Math.floor(coveragePolicy.maxEvidence || 48))
+  const providers = coveragePolicy.providers || SEARCH_PROVIDERS
+  emit('research', 'research', 'status', `社区研究 Agent 已启动自适应真实检索：目标 ${requestedMinimumSites}+ 站点、${minimumEvidence}+ 条玩家证据`, 4)
+  const directRetrievals = []
   if (safeRequest.regions.includes('WEST')) {
-    retrievals.push(fetchRedditEvidence({ request: safeRequest, apiKey, fetchImpl }).then((items) => {
+    directRetrievals.push(fetchRedditEvidence({ request: safeRequest, apiKey, fetchImpl }).then((items) => {
       emit('research', 'research', 'source', `Reddit RSS 返回 ${items.length} 条可核验讨论`, 28, items.map((item) => item.id), { source: 'Reddit RSS', region: 'WEST', evidenceRecords: items })
       return items
     }).catch((error) => {
@@ -796,7 +1020,7 @@ export async function runLiveResearch({
     }))
   }
   if (safeRequest.regions.includes('JP')) {
-    retrievals.push(fetchNiconicoEvidence({ request: safeRequest, fetchImpl }).then((items) => {
+    directRetrievals.push(fetchNiconicoEvidence({ request: safeRequest, fetchImpl }).then((items) => {
       emit('research', 'research', 'source', `Niconico 官方快照返回 ${items.length} 条版本期日语页面`, 48, items.map((item) => item.id), { source: 'Niconico Snapshot', region: 'JP', evidenceRecords: items })
       return items
     }).catch((error) => {
@@ -804,29 +1028,55 @@ export async function runLiveResearch({
       return []
     }))
   }
-  const searchPlans = safeRequest.regions.flatMap((region) => buildSourceSearchPlans(safeRequest, region))
-  searchPlans.forEach((plan, index) => {
-    retrievals.push(fetchWebSearchEvidence({ request: safeRequest, plan, apiKey, config, fetchImpl }).then((items) => {
-      const progress = Math.min(82, 34 + Math.round(((index + 1) / Math.max(1, searchPlans.length)) * 48))
-      emit('research', 'research', 'source', `${plan.region} · ${plan.sourceNames.join(' / ')}：命中 ${items.length} 条可验证玩家页面`, progress, items.map((item) => item.id), {
-        source: plan.sourceNames.join(' / '),
-        region: plan.region,
-        evidenceRecords: items,
+  const directEvidence = (await Promise.all(directRetrievals)).flat()
+  const searchPlans = interleavePlans(
+    safeRequest.regions.map((region) => buildSourceSearchPlans(safeRequest, region, runSeed)),
+    runSeed,
+  )
+  const minimumSites = Math.min(requestedMinimumSites, searchPlans.length)
+  const coverage = await collectResearchCoverage({
+    plans: searchPlans,
+    minimumSites,
+    minimumEvidence: Math.max(0, minimumEvidence - directEvidence.length),
+    concurrency: coveragePolicy.concurrency || DEFAULT_SEARCH_CONCURRENCY,
+    providers,
+    retrieve: ({ plan, provider, query, round }) => provider === 'brave'
+      ? fetchBraveSearchEvidence({ request: safeRequest, plan, query, round, fetchImpl })
+      : fetchBigModelSearchEvidence({ request: safeRequest, plan, query, round, apiKey, config, fetchImpl }),
+    onAttempt: (attempt, stats) => {
+      const providerLabel = attempt.provider === 'brave' ? 'Brave Search' : 'BigModel Search'
+      const progress = Math.min(88, 18 + Math.round((stats.sitesAttempted / Math.max(1, minimumSites)) * 52))
+      const message = attempt.error
+        ? `${attempt.plan.region} · ${attempt.plan.sourceNames[0]} · ${providerLabel} 第 ${attempt.round + 1} 轮失败：${attempt.error}`
+        : `${attempt.plan.region} · ${attempt.plan.sourceNames[0]} · ${providerLabel} 第 ${attempt.round + 1} 轮：新增 ${attempt.records.length} 条；已搜索 ${stats.sitesAttempted} 站 / 累计 ${stats.evidenceCount + directEvidence.length} 条`
+      emit('research', 'research', attempt.error ? 'risk' : 'source', message, progress, attempt.records.map((item) => item.id), {
+        source: `${attempt.plan.sourceNames[0]} · ${providerLabel}`,
+        region: attempt.plan.region,
+        severity: attempt.error ? 'medium' : undefined,
+        evidenceRecords: attempt.records,
+        searchProvider: attempt.provider,
+        query: attempt.query,
+        sitesAttempted: stats.sitesAttempted,
+        evidenceCount: stats.evidenceCount + directEvidence.length,
       })
-      return items
-    }).catch((error) => {
-      emit('research', 'research', 'risk', `${plan.region} · ${plan.sourceNames.join(' / ')} 检索失败：${cleanString(error.message, 140)}`, 60, [], {
-        source: plan.sourceNames.join(' / '),
-        region: plan.region,
-        severity: 'medium',
-      })
-      return []
-    }))
+    },
   })
-  const evidence = (await Promise.all(retrievals)).flat()
-  if (!evidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未生成替代评论。')
+  const combined = new Map()
+  for (const item of [...directEvidence, ...coverage.evidence]) {
+    const key = evidenceDedupeKey(item)
+    if (!combined.has(key)) combined.set(key, item)
+  }
+  const allEvidence = [...combined.values()]
+  if (!allEvidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未生成替代评论。')
+  const targetReached = coverage.targetReached && allEvidence.length >= minimumEvidence
+  if (!targetReached) emit('research', 'research', 'risk', `已完成可用来源检索，但样本未达到目标：搜索 ${coverage.sitesAttempted} 个站点，取得 ${allEvidence.length} 条可核验玩家证据。后续结论将降级并明确显示证据不足。`, 92, allEvidence.map((item) => item.id), { severity: 'high', sitesAttempted: coverage.sitesAttempted, evidenceCount: allEvidence.length })
+  const evidence = selectBalancedEvidence(allEvidence, maxEvidence)
   assertVerifiedEvidence(evidence)
-  emit('research', 'research', 'handoff', `真实检索完成，交接 ${evidence.length} 条带 URL 的公开证据`, 100, evidence.map((item) => item.id))
+  emit('research', 'research', 'handoff', `${targetReached ? '覆盖目标达成' : '降级交接'}：已搜索 ${coverage.sitesAttempted} 个站点，交接 ${evidence.length} 条带 URL 的真实玩家证据`, 100, evidence.map((item) => item.id), {
+    sitesAttempted: coverage.sitesAttempted,
+    evidenceCount: evidence.length,
+    providers: [...new Set(coverage.attempts.map((attempt) => attempt.provider))],
+  })
 
   emit('sentiment', 'sentiment', 'status', '玩家情绪 Agent 正在逐条分析真实证据', 8)
   emit('regional', 'regional', 'status', '地区差异 Agent 正在并行比较来源与语境', 8)
@@ -884,6 +1134,15 @@ export async function runLiveResearch({
     evidence: analyzedEvidence,
     report,
     advisorAnswers: [],
+    researchCoverage: {
+      targetSites: minimumSites,
+      targetEvidence: minimumEvidence,
+      sitesAttempted: coverage.sitesAttempted,
+      evidenceCollected: evidence.length,
+      attempts: coverage.attempts.length,
+      providers: [...new Set(coverage.attempts.map((attempt) => attempt.provider))],
+      targetReached,
+    },
   }
 }
 

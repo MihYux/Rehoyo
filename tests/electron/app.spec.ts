@@ -33,7 +33,7 @@ test('secures first-run credentials and restores the Electron connection', async
 
       await page.getByLabel('API Key').fill(testApiKey)
       await page.getByRole('button', { name: '连接并进入' }).click()
-      await expect(page.getByRole('heading', { name: /听见全球玩家/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /从看见全球玩家/ })).toBeVisible()
 
       const actualUserDataPath = await firstLaunch.evaluate(({ app }) => app.getPath('userData'))
       expect(path.resolve(actualUserDataPath)).toBe(path.resolve(userDataPath))
@@ -73,7 +73,7 @@ test('secures first-run credentials and restores the Electron connection', async
       const page = await secondLaunch.firstWindow()
       await page.waitForLoadState('domcontentloaded')
 
-      await expect(page.getByRole('heading', { name: /听见全球玩家/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /从看见全球玩家/ })).toBeVisible()
       await expect(page.getByRole('heading', { name: '连接 ReHoYo' })).toHaveCount(0)
 
       const cleared = await page.evaluate(() => (
