@@ -1,24 +1,40 @@
 import { ArrowRight, LockKey, Plugs, ShieldCheck } from '@phosphor-icons/react'
 import { type FormEvent, type PropsWithChildren, useEffect, useRef, useState } from 'react'
 import logoUrl from '../../../ReHoYo_Logo_Transparent.png'
-import { getConnectionClient, type ConnectionStatus } from '../../desktop/bridge'
+import {
+  getConnectionClient,
+  type ConnectionStatus,
+  type ProviderConnectionInput,
+} from '../../desktop/bridge'
+import './connection-gate.css'
 
 const BIGMODEL_CODING_ENDPOINT = 'https://open.bigmodel.cn/api/coding/paas/v4'
+const OPENAI_API_ENDPOINT = 'https://api.openai.com/v1'
 
 type GatePhase = 'checking' | 'required' | 'saving' | 'ready' | 'unavailable'
 
 function friendlyConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
-  if (message.includes('endpoint')) return '当前版本仅支持 BigModel Coding Endpoint。'
+  if (message.includes('openai') && message.includes('endpoint')) {
+    return 'OpenAI Endpoint 无效，请使用官方 API 地址。'
+  }
+  if (message.includes('bigmodel') && message.includes('endpoint')) {
+    return 'BigModel Endpoint 无效，请使用 Coding API 地址。'
+  }
   if (message.includes('api key')) return '请输入有效的 API Key。'
   return '连接配置未能保存，请检查输入后重试。'
+}
+
+function sessionWarnings(status: ConnectionStatus | null) {
+  return [...new Set([status?.ai?.warning, status?.search?.warning].filter(Boolean))].join(' ')
 }
 
 export function ConnectionGate({ children }: PropsWithChildren) {
   const [phase, setPhase] = useState<GatePhase>('checking')
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null)
   const [error, setError] = useState('')
-  const apiKeyInputRef = useRef<HTMLInputElement>(null)
+  const aiKeyInputRef = useRef<HTMLInputElement>(null)
+  const searchKeyInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let active = true
@@ -44,25 +60,44 @@ export function ConnectionGate({ children }: PropsWithChildren) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const client = getConnectionClient()
-    if (!client) {
+    if (!client || !connectionStatus) {
       setPhase('unavailable')
       return
     }
 
     const formData = new FormData(event.currentTarget)
-    const apiKey = String(formData.get('apiKey') || '').trim()
-    const endpoint = String(formData.get('endpoint') || '').trim()
-    if (!apiKey) {
-      setError('请输入 API Key。')
-      apiKeyInputRef.current?.focus()
-      return
+    const input: { ai?: ProviderConnectionInput; search?: ProviderConnectionInput } = {}
+    if (!connectionStatus.ai.configured) {
+      const apiKey = String(formData.get('aiApiKey') || '').trim()
+      if (!apiKey) {
+        setError('请输入 BigModel API Key。')
+        aiKeyInputRef.current?.focus()
+        return
+      }
+      input.ai = {
+        apiKey,
+        endpoint: String(formData.get('aiEndpoint') || '').trim(),
+      }
+    }
+    if (!connectionStatus.search.configured) {
+      const apiKey = String(formData.get('searchApiKey') || '').trim()
+      if (!apiKey) {
+        setError('请输入 OpenAI API Key。')
+        searchKeyInputRef.current?.focus()
+        return
+      }
+      input.search = {
+        apiKey,
+        endpoint: String(formData.get('searchEndpoint') || '').trim(),
+      }
     }
 
     setError('')
     setPhase('saving')
     try {
-      const status = await client.save({ apiKey, endpoint })
-      if (apiKeyInputRef.current) apiKeyInputRef.current.value = ''
+      const status = await client.save(input)
+      if (aiKeyInputRef.current) aiKeyInputRef.current.value = ''
+      if (searchKeyInputRef.current) searchKeyInputRef.current.value = ''
       setConnectionStatus(status)
       setPhase(status.configured ? 'ready' : 'required')
     } catch (saveError) {
@@ -72,13 +107,14 @@ export function ConnectionGate({ children }: PropsWithChildren) {
   }
 
   if (phase === 'ready') {
+    const warning = sessionWarnings(connectionStatus)
     return (
       <>
         {children}
-        {connectionStatus?.persistence === 'session' && connectionStatus.warning && (
+        {warning && (
           <div className="connection-session-notice" role="status">
             <ShieldCheck size={20} weight="duotone" />
-            <span>{connectionStatus.warning}</span>
+            <span>{warning}</span>
           </div>
         )}
       </>
@@ -107,9 +143,12 @@ export function ConnectionGate({ children }: PropsWithChildren) {
     )
   }
 
+  const needsAi = !connectionStatus?.ai.configured
+  const needsSearch = !connectionStatus?.search.configured
+
   return (
     <main className="connection-gate">
-      <section className="connection-card" aria-labelledby="connection-title">
+      <section className="connection-card connection-card--dual" aria-labelledby="connection-title">
         <header className="connection-brand">
           <img src={logoUrl} alt="ReHoYo" />
           <span>GLOBAL PLAYER INTELLIGENCE</span>
@@ -118,50 +157,91 @@ export function ConnectionGate({ children }: PropsWithChildren) {
         <div className="connection-copy">
           <p className="connection-eyebrow">SECURE FIRST CONNECTION</p>
           <h1 id="connection-title">连接 ReHoYo</h1>
-          <p>配置真实研究所需的 BigModel API。完成后进入全球玩家洞察指挥中心。</p>
+          <p>补充缺失的推理与官方搜索连接。密钥只会交给 Electron 主进程安全保存。</p>
         </div>
 
         <form className="connection-form" onSubmit={handleSubmit}>
-          <label htmlFor="rehoyo-api-key">API Key</label>
-          <div className="connection-input">
-            <LockKey size={21} aria-hidden="true" />
-            <input
-              ref={apiKeyInputRef}
-              id="rehoyo-api-key"
-              name="apiKey"
-              type="password"
-              autoComplete="off"
-              autoFocus
-              required
-              maxLength={4096}
-              placeholder="粘贴 API Key"
-            />
-          </div>
+          {needsAi && (
+            <fieldset className="connection-provider">
+              <legend><span>AI 推理服务</span><strong>BigModel · GLM-5.2</strong></legend>
 
-          <label htmlFor="rehoyo-api-endpoint">API Endpoint</label>
-          <div className="connection-input">
-            <Plugs size={21} aria-hidden="true" />
-            <input
-              id="rehoyo-api-endpoint"
-              name="endpoint"
-              type="url"
-              required
-              defaultValue={connectionStatus?.endpoint || BIGMODEL_CODING_ENDPOINT}
-              spellCheck={false}
-            />
-          </div>
+              <label htmlFor="rehoyo-ai-api-key">BigModel API Key</label>
+              <div className="connection-input">
+                <LockKey size={21} aria-hidden="true" />
+                <input
+                  ref={aiKeyInputRef}
+                  id="rehoyo-ai-api-key"
+                  name="aiApiKey"
+                  type="password"
+                  autoComplete="off"
+                  autoFocus
+                  required
+                  maxLength={4096}
+                  placeholder="粘贴 BigModel API Key"
+                />
+              </div>
+
+              <label htmlFor="rehoyo-ai-endpoint">BigModel Endpoint</label>
+              <div className="connection-input">
+                <Plugs size={21} aria-hidden="true" />
+                <input
+                  id="rehoyo-ai-endpoint"
+                  name="aiEndpoint"
+                  type="url"
+                  required
+                  defaultValue={connectionStatus?.ai.endpoint || BIGMODEL_CODING_ENDPOINT}
+                  spellCheck={false}
+                />
+              </div>
+            </fieldset>
+          )}
+
+          {needsSearch && (
+            <fieldset className="connection-provider">
+              <legend><span>官方搜索服务</span><strong>OpenAI · Web Search</strong></legend>
+
+              <label htmlFor="rehoyo-search-api-key">OpenAI API Key</label>
+              <div className="connection-input">
+                <LockKey size={21} aria-hidden="true" />
+                <input
+                  ref={searchKeyInputRef}
+                  id="rehoyo-search-api-key"
+                  name="searchApiKey"
+                  type="password"
+                  autoComplete="off"
+                  autoFocus={!needsAi}
+                  required
+                  maxLength={4096}
+                  placeholder="粘贴 OpenAI API Key"
+                />
+              </div>
+
+              <label htmlFor="rehoyo-search-endpoint">OpenAI Endpoint</label>
+              <div className="connection-input">
+                <Plugs size={21} aria-hidden="true" />
+                <input
+                  id="rehoyo-search-endpoint"
+                  name="searchEndpoint"
+                  type="url"
+                  required
+                  defaultValue={connectionStatus?.search.endpoint || OPENAI_API_ENDPOINT}
+                  spellCheck={false}
+                />
+              </div>
+            </fieldset>
+          )}
 
           {error && <p className="connection-error" role="alert">{error}</p>}
 
           <button type="submit" disabled={phase === 'saving'}>
-            <span>{phase === 'saving' ? '正在安全保存…' : '连接并进入'}</span>
+            <span>{phase === 'saving' ? '正在安全保存…' : '安全连接并进入'}</span>
             <ArrowRight size={21} aria-hidden="true" />
           </button>
         </form>
 
         <footer className="connection-privacy">
           <ShieldCheck size={21} weight="duotone" aria-hidden="true" />
-          <p><strong>仅保存在此设备</strong><span>密钥由操作系统加密，不写入项目、浏览器存储或 ReHoYo 日志。</span></p>
+          <p><strong>密钥不进入前端状态</strong><span>系统加密后保存在此设备，不写入项目、localStorage、SQLite 或日志。</span></p>
         </footer>
       </section>
     </main>

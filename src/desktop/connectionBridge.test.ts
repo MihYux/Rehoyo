@@ -1,34 +1,44 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getConnectionClient } from './bridge'
+import { getConnectionClient, type ConnectionStatus } from './bridge'
 
-afterEach(() => {
-  delete window.rehoyoDesktop
-})
+afterEach(() => { delete window.rehoyoDesktop })
 
-describe('secure connection IPC bridge', () => {
-  it('exposes the renderer connection client without returning credential fields', async () => {
-    const connection = {
-      getStatus: vi.fn(async () => ({
-        configured: false,
-        provider: null,
+describe('secure dual-provider connection IPC bridge', () => {
+  it('exposes only public provider status and no credential fields', async () => {
+    const publicStatus: ConnectionStatus = {
+      configured: false,
+      ai: {
+        configured: true,
+        provider: 'bigmodel',
         endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
-        endpointHost: null,
-        model: null,
-        persistence: 'none' as const,
-      })),
-      save: vi.fn(),
-      clear: vi.fn(),
+        model: 'glm-5.2',
+        persistence: 'encrypted',
+      },
+      search: {
+        configured: false,
+        provider: 'openai',
+        endpoint: 'https://api.openai.com/v1',
+        model: 'gpt-5.6',
+        persistence: 'none',
+      },
+      missing: ['search.apiKey'],
+    }
+    const connection = {
+      getStatus: vi.fn(async () => publicStatus), save: vi.fn(), clear: vi.fn(), invalidate: vi.fn(),
     }
     window.rehoyoDesktop = { isElectron: true, platform: 'win32', connection }
 
     expect(getConnectionClient()).toBe(connection)
-    expect(await getConnectionClient()?.getStatus()).not.toHaveProperty('apiKey')
-    expect(await getConnectionClient()?.getStatus()).not.toHaveProperty('encryptedApiKey')
+    const received = await getConnectionClient()?.getStatus()
+    expect(received).not.toHaveProperty('apiKey')
+    expect(received).not.toHaveProperty('encryptedApiKey')
+    expect(received?.ai).not.toHaveProperty('apiKey')
+    expect(received?.search).not.toHaveProperty('apiKey')
   })
 
-  it('registers only the narrow status, save, and clear connection channels', async () => {
+  it('registers narrow status/save/clear/invalidate IPC without a renderer key getter', async () => {
     const root = process.cwd()
     const [mainSource, preloadSource] = await Promise.all([
       readFile(path.join(root, 'electron/main.mjs'), 'utf8'),
@@ -39,11 +49,15 @@ describe('secure connection IPC bridge', () => {
       'rehoyo:connection:status',
       'rehoyo:connection:save',
       'rehoyo:connection:clear',
+      'rehoyo:connection:invalidate',
     ]) {
       expect(mainSource).toContain(channel)
       expect(preloadSource).toContain(channel)
     }
     expect(mainSource).toContain('safeStorage')
+    expect(mainSource).toContain('loadEnvFile')
+    expect(mainSource).toContain("path.join(appRoot, '.env')")
+    expect(preloadSource).not.toContain('getApiKey')
     expect(preloadSource).not.toContain('encryptedApiKey')
     expect(preloadSource).not.toContain('keyFile')
   })

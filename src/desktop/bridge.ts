@@ -4,22 +4,36 @@ export interface LiveAdvisorStatus {
   model: string
 }
 
-export type ConnectionPersistence = 'encrypted' | 'session' | 'external' | 'none'
+export type ConnectionProvider = 'ai' | 'search'
+export type ConnectionField = 'ai.apiKey' | 'ai.endpoint' | 'search.apiKey' | 'search.endpoint'
+export type ConnectionPersistence = 'encrypted' | 'session' | 'environment' | 'external' | 'none'
 
-export interface ConnectionStatus {
+export interface ProviderConnectionStatus {
   configured: boolean
-  provider: 'bigmodel' | null
+  provider: 'bigmodel' | 'openai'
   endpoint: string
-  endpointHost: string | null
-  model: string | null
+  model: 'glm-5.2' | 'gpt-5.6'
   persistence: ConnectionPersistence
   warning?: string
 }
 
+export interface ConnectionStatus {
+  configured: boolean
+  ai: ProviderConnectionStatus & { provider: 'bigmodel'; model: 'glm-5.2' }
+  search: ProviderConnectionStatus & { provider: 'openai'; model: 'gpt-5.6' }
+  missing: readonly ConnectionField[]
+}
+
+export interface ProviderConnectionInput {
+  apiKey: string
+  endpoint: string
+}
+
 export interface ConnectionClient {
   getStatus: () => Promise<ConnectionStatus>
-  save: (input: { apiKey: string; endpoint: string }) => Promise<ConnectionStatus>
-  clear: () => Promise<{ configured: false }>
+  save: (input: { ai?: ProviderConnectionInput; search?: ProviderConnectionInput }) => Promise<ConnectionStatus>
+  clear: (provider?: ConnectionProvider) => Promise<ConnectionStatus>
+  invalidate: (provider: ConnectionProvider) => Promise<ConnectionStatus>
 }
 
 export interface LiveAdvisorRequest {

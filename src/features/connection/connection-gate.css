@@ -1,0 +1,35 @@
+.connection-card--dual {
+  width: min(720px, calc(100vw - 96px));
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+}
+
+.connection-provider {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 18px;
+  border: 1px solid #d8e2e8;
+  background: #f8fafb;
+}
+
+.connection-provider legend {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  color: #17324a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.connection-provider legend strong {
+  color: #0d7188;
+  font: 600 11px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+}
+
+.connection-provider .connection-input {
+  background: #ffffff;
+}

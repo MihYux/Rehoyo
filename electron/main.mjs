@@ -1,11 +1,14 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { loadEnvFile } from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   BIGMODEL_CODING_ENDPOINT,
   BIGMODEL_SEARCH_ENDPOINT,
   DEFAULT_GLM_MODEL,
+  DEFAULT_OPENAI_MODEL,
+  OPENAI_API_ENDPOINT,
   createConnectionManager,
 } from './connection-manager.mjs'
 import { createWindowOptions, isAllowedNavigation } from './config.mjs'
@@ -24,6 +27,11 @@ import { createResearchHistoryStore } from './research-history-store.mjs'
 
 const electronDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(electronDirectory, '..')
+try {
+  loadEnvFile(path.join(appRoot, '.env'))
+} catch (error) {
+  if (error?.code !== 'ENOENT') console.error('Local environment file ignored: invalid .env file')
+}
 const preloadPath = path.join(electronDirectory, 'preload.cjs')
 const iconPath = path.join(appRoot, 'ReHoYo_Logo_Transparent.png')
 const rendererFile = path.join(appRoot, 'dist', 'index.html')
@@ -60,11 +68,20 @@ function sendAdvisorEvent(sender, payload) {
 function currentGlmConfig() {
   const status = connectionManager?.getStatus()
   return Object.freeze({
-    baseUrl: BIGMODEL_CODING_ENDPOINT,
+    baseUrl: status?.ai?.endpoint || BIGMODEL_CODING_ENDPOINT,
     searchBaseUrl: BIGMODEL_SEARCH_ENDPOINT,
-    model: status?.model || launchGlmConfig.model || DEFAULT_GLM_MODEL,
+    model: status?.ai?.model || launchGlmConfig.model || DEFAULT_GLM_MODEL,
     keyFile: '',
-    configured: Boolean(status?.configured),
+    configured: Boolean(status?.ai?.configured),
+  })
+}
+
+function currentOpenAiConfig() {
+  const status = connectionManager?.getStatus()
+  return Object.freeze({
+    baseUrl: status?.search?.endpoint || OPENAI_API_ENDPOINT,
+    model: status?.search?.model || DEFAULT_OPENAI_MODEL,
+    configured: Boolean(status?.search?.configured),
   })
 }
 
@@ -74,7 +91,8 @@ function registerIpcHandlers() {
 
   ipcMain.handle('rehoyo:connection:status', () => connectionManager.getStatus())
   ipcMain.handle('rehoyo:connection:save', async (_event, input) => connectionManager.save(input))
-  ipcMain.handle('rehoyo:connection:clear', async () => connectionManager.clear())
+  ipcMain.handle('rehoyo:connection:clear', async (_event, provider) => connectionManager.clear(provider))
+  ipcMain.handle('rehoyo:connection:invalidate', async (_event, provider) => connectionManager.invalidate(provider))
 
   ipcMain.handle('rehoyo:advisor:status', () => getPublicGlmStatus(currentGlmConfig()))
   ipcMain.handle('rehoyo:advisor:ask', async (_event, input) => {
@@ -83,7 +101,7 @@ function registerIpcHandlers() {
       const response = await requestGlmAdvisor({
         config: currentGlmConfig(),
         request,
-        getApiKey: () => connectionManager.getApiKey(),
+        getApiKey: () => connectionManager.getApiKey('ai'),
       })
       return { ok: true, ...response }
     } catch (error) {
@@ -122,7 +140,7 @@ function registerIpcHandlers() {
       const response = await streamGlmAdvisor({
         config: currentGlmConfig(),
         request,
-        getApiKey: () => connectionManager.getApiKey(),
+        getApiKey: () => connectionManager.getApiKey('ai'),
         signal: controller.signal,
         onEvent: ({ content }) => sendAdvisorEvent(event.sender, {
           requestId,
@@ -162,8 +180,9 @@ function registerIpcHandlers() {
 
   ipcMain.handle('rehoyo:research:status', () => {
     const config = currentGlmConfig()
+    const openAiConfig = currentOpenAiConfig()
     return {
-      configured: config.configured,
+      configured: config.configured && openAiConfig.configured,
       model: config.model,
       retrieval: '37 个公开站点 · 13 组地域检索 · Reddit / Niconico',
       searchEndpoint: new URL(config.searchBaseUrl).hostname,
@@ -180,8 +199,10 @@ function registerIpcHandlers() {
       const request = sanitizeResearchRequest(input)
       const preset = await runLiveResearch({
         config: currentGlmConfig(),
+        openAiConfig: currentOpenAiConfig(),
         request,
-        getApiKey: () => connectionManager.getApiKey(),
+        getApiKey: () => connectionManager.getApiKey('ai'),
+        getSearchApiKey: () => connectionManager.getApiKey('search'),
         runSeed: runId,
         ragStore: localRagStore,
         historyStore: researchHistoryStore,
@@ -231,6 +252,7 @@ app.whenReady().then(async () => {
   connectionManager = createConnectionManager({
     userDataPath: app.getPath('userData'),
     safeStorage,
+    environment: process.env,
     externalConfig: launchGlmConfig,
     externalGetApiKey: launchGlmConfig.configured
       ? () => readFile(launchGlmConfig.keyFile, 'utf8')

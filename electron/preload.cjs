@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld('rehoyoDesktop', Object.freeze({
   connection: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:connection:status'),
     save: (input) => ipcRenderer.invoke('rehoyo:connection:save', input),
-    clear: () => ipcRenderer.invoke('rehoyo:connection:clear'),
+    clear: (provider) => ipcRenderer.invoke('rehoyo:connection:clear', provider),
+    invalidate: (provider) => ipcRenderer.invoke('rehoyo:connection:invalidate', provider),
   }),
   advisor: Object.freeze({
     getStatus: () => ipcRenderer.invoke('rehoyo:advisor:status'),

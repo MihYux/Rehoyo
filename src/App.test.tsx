@@ -25,9 +25,15 @@ describe('App routes', () => {
       isElectron: true,
       platform: 'win32',
       connection: {
-        getStatus: vi.fn(async () => ({ configured: true, provider: 'bigmodel' as const, endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4', endpointHost: 'open.bigmodel.cn', model: 'glm-5.2', persistence: 'encrypted' as const })),
+        getStatus: vi.fn(async () => ({
+          configured: true,
+          ai: { configured: true, provider: 'bigmodel' as const, endpoint: 'https://open.bigmodel.cn/api/coding/paas/v4', model: 'glm-5.2' as const, persistence: 'encrypted' as const },
+          search: { configured: true, provider: 'openai' as const, endpoint: 'https://api.openai.com/v1', model: 'gpt-5.6' as const, persistence: 'encrypted' as const },
+          missing: [],
+        })),
         save: vi.fn(),
         clear: vi.fn(),
+        invalidate: vi.fn(),
       },
       research: {
         getStatus: vi.fn(async () => ({ configured: true, model: 'glm-5.2', retrieval: 'verified test retrieval', searchEndpoint: 'open.bigmodel.cn' })),
