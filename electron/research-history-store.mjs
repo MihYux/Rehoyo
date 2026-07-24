@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite'
 
 const RUN_STATUSES = new Set(['running', 'incomplete', 'complete', 'failed'])
 const REGIONS = new Set(['CN', 'JP', 'WEST'])
+const SEARCH_ROUTES = new Set(['openai_search', 'bigmodel_search', 'webfetch'])
+const SECRET_KEY_PATTERN = /^(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password)$/i
 
 function clean(value, limit = 80_000) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, limit)
@@ -16,6 +18,27 @@ function parseJson(value, fallback) {
   } catch {
     return fallback
   }
+}
+
+function assertNoSecretMaterial(value, pathParts = []) {
+  if (!value || typeof value !== 'object') return
+  for (const [key, child] of Object.entries(value)) {
+    if (SECRET_KEY_PATTERN.test(key)) {
+      throw new Error(`Credential or secret material is forbidden in research history (${[...pathParts, key].join('.')}).`)
+    }
+    if (child && typeof child === 'object') assertNoSecretMaterial(child, [...pathParts, key])
+  }
+}
+
+function publicHttpsUrl(value) {
+  let url
+  try {
+    url = new URL(clean(value, 2_000))
+  } catch {
+    throw new Error('Audit records require a valid HTTPS URL.')
+  }
+  if (url.protocol !== 'https:') throw new Error('Audit records require an HTTPS URL.')
+  return url.href
 }
 
 function canonicalEvidence(record) {
@@ -111,8 +134,33 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
       PRIMARY KEY (run_id, observation_id),
       FOREIGN KEY (run_id) REFERENCES research_runs(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS research_route_snapshots (
+      run_id TEXT NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      region TEXT NOT NULL CHECK (region IN ('CN', 'JP', 'WEST')),
+      selected_route TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, snapshot_id),
+      FOREIGN KEY (run_id) REFERENCES research_runs(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS research_candidates (
+      run_id TEXT NOT NULL,
+      candidate_id TEXT NOT NULL,
+      region TEXT NOT NULL CHECK (region IN ('CN', 'JP', 'WEST')),
+      provider TEXT NOT NULL,
+      status TEXT NOT NULL,
+      url TEXT NOT NULL CHECK (url LIKE 'https://%'),
+      candidate_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, candidate_id),
+      FOREIGN KEY (run_id) REFERENCES research_runs(id) ON DELETE CASCADE
+    );
     CREATE INDEX IF NOT EXISTS research_runs_game_status ON research_runs(game, status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS research_evidence_run_region ON research_evidence(run_id, region);
+    CREATE INDEX IF NOT EXISTS research_candidates_run_region ON research_candidates(run_id, region, created_at);
+    CREATE INDEX IF NOT EXISTS research_routes_run_region ON research_route_snapshots(run_id, region, created_at);
   `)
 
   const insertRun = database.prepare(`
@@ -129,6 +177,21 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insertReport = database.prepare('INSERT INTO research_reports (run_id, report_json, created_at) VALUES (?, ?, ?)')
+  const insertRouteSnapshot = database.prepare(`
+    INSERT INTO research_route_snapshots
+      (run_id, snapshot_id, region, selected_route, revision, snapshot_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  const insertCandidate = database.prepare(`
+    INSERT INTO research_candidates
+      (run_id, candidate_id, region, provider, status, url, candidate_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const insertBrowserObservation = database.prepare(`
+    INSERT INTO browser_observations
+      (run_id, observation_id, page_id, region, action, status, url, observation_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
 
   function assertRun(runId) {
     const id = clean(runId, 160)
@@ -149,6 +212,7 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
 
   function appendAttempt(runId, attempt) {
     const id = assertRun(runId)
+    assertNoSecretMaterial(attempt)
     const attemptId = clean(attempt?.id, 200)
     if (!attemptId) throw new Error('Research attempt requires an id.')
     insertAttempt.run(
@@ -165,6 +229,7 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
 
   function appendEvidence(runId, record) {
     const id = assertRun(runId)
+    assertNoSecretMaterial(record)
     const canonicalKey = validateEvidence(id, record)
     const url = new URL(record.url)
     try {
@@ -186,6 +251,70 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
       if (/UNIQUE constraint failed/i.test(String(error?.message || error))) throw new Error('Duplicate research evidence is not allowed.')
       throw error
     }
+  }
+
+  function appendRouteSnapshot(runId, snapshot) {
+    const id = assertRun(runId)
+    assertNoSecretMaterial(snapshot)
+    const snapshotId = clean(snapshot?.id, 200)
+    const region = clean(snapshot?.region, 20)
+    const selectedRoute = clean(snapshot?.selectedRoute, 40)
+    if (!snapshotId || !REGIONS.has(region)) throw new Error('Route snapshots require an id and supported region.')
+    if (!SEARCH_ROUTES.has(selectedRoute)) throw new Error('Route snapshots require a supported selected route.')
+    const weights = snapshot?.weights
+    if (!weights || SEARCH_ROUTES.size !== [...SEARCH_ROUTES].filter((route) => Number.isFinite(Number(weights[route]))).length) {
+      throw new Error('Route snapshots require percentages for every search route.')
+    }
+    const total = [...SEARCH_ROUTES].reduce((sum, route) => sum + Number(weights[route]), 0)
+    if (Math.abs(total - 100) > 0.001) throw new Error('Route snapshot percentages must total 100.')
+    insertRouteSnapshot.run(
+      id,
+      snapshotId,
+      region,
+      selectedRoute,
+      Math.max(0, Math.floor(Number(snapshot?.revision) || 0)),
+      JSON.stringify(snapshot),
+      Number(now()),
+    )
+  }
+
+  function appendCandidate(runId, candidate) {
+    const id = assertRun(runId)
+    assertNoSecretMaterial(candidate)
+    const candidateId = clean(candidate?.id, 200)
+    const region = clean(candidate?.region, 20)
+    const provider = clean(candidate?.provider, 40)
+    const status = clean(candidate?.status, 40)
+    if (!candidateId || !REGIONS.has(region) || !SEARCH_ROUTES.has(provider) || !status) {
+      throw new Error('Candidates require an id, region, route provider, and status.')
+    }
+    const url = publicHttpsUrl(candidate?.url)
+    insertCandidate.run(id, candidateId, region, provider, status, url, JSON.stringify({ ...candidate, url }), Number(now()))
+  }
+
+  function appendBrowserObservation(runId, observation) {
+    const id = assertRun(runId)
+    assertNoSecretMaterial(observation)
+    const observationId = clean(observation?.id, 200)
+    const pageId = clean(observation?.pageId, 200)
+    const region = clean(observation?.region, 20)
+    const action = clean(observation?.action, 80)
+    const status = clean(observation?.status, 40)
+    const url = observation?.url ? publicHttpsUrl(observation.url) : ''
+    if (!observationId || !pageId || !REGIONS.has(region) || !action || !status) {
+      throw new Error('Browser observations require an id, page, region, action, and status.')
+    }
+    insertBrowserObservation.run(
+      id,
+      observationId,
+      pageId,
+      region,
+      action,
+      status,
+      url,
+      JSON.stringify({ ...observation, url }),
+      Number(now()),
+    )
   }
 
   function saveReport(runId, report) {
@@ -217,6 +346,12 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
     const attempts = database.prepare('SELECT payload_json FROM research_attempts WHERE run_id = ? ORDER BY created_at, attempt_id').all(row.id)
       .map((item) => parseJson(item.payload_json, null)).filter(Boolean)
     const reportRow = database.prepare('SELECT report_json FROM research_reports WHERE run_id = ?').get(row.id)
+    const routeSnapshots = database.prepare('SELECT snapshot_json FROM research_route_snapshots WHERE run_id = ? ORDER BY created_at, snapshot_id').all(row.id)
+      .map((item) => parseJson(item.snapshot_json, null)).filter(Boolean)
+    const candidates = database.prepare('SELECT candidate_json FROM research_candidates WHERE run_id = ? ORDER BY created_at, candidate_id').all(row.id)
+      .map((item) => parseJson(item.candidate_json, null)).filter(Boolean)
+    const browserObservations = database.prepare('SELECT observation_json FROM browser_observations WHERE run_id = ? ORDER BY created_at, observation_id').all(row.id)
+      .map((item) => parseJson(item.observation_json, null)).filter(Boolean)
     return {
       id: row.id,
       game: row.game,
@@ -229,6 +364,9 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
       limitations: parseJson(row.limitations_json, []),
       evidence,
       attempts,
+      routeSnapshots,
+      candidates,
+      browserObservations,
       report: reportRow ? parseJson(reportRow.report_json, undefined) : undefined,
     }
   }
@@ -251,6 +389,9 @@ export function createResearchHistoryStore({ dbPath, now = Date.now }) {
   return Object.freeze({
     startRun,
     appendAttempt,
+    appendRouteSnapshot,
+    appendCandidate,
+    appendBrowserObservation,
     appendEvidence,
     saveReport,
     finishRun,
