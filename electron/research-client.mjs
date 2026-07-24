@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { jsonrepair } from 'jsonrepair'
 import { collectWikiContext } from './wiki-context.mjs'
+import { runRegionalResearchAgent } from './research-agent-loop.mjs'
+import { createCoveragePolicy, deriveRegionalCoverage } from './research-policy.mjs'
 
 const SEARCH_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 const NICONICO_SNAPSHOT_URL = 'https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search'
@@ -1023,12 +1025,19 @@ export async function runLiveResearch({
   ragStore,
   createResearchBrowser,
   collectWikiContextImpl = collectWikiContext,
+  researchModelFactory,
+  historyStore,
 }) {
   if (!config?.configured) throw new Error('Real research requires a configured GLM key file.')
   const safeRequest = sanitizeResearchRequest(request)
   const apiKey = String(getApiKey ? await getApiKey() : await readKeyFile(config.keyFile)).trim()
   if (!apiKey) throw new Error('GLM API key is empty.')
   const startedAt = now()
+  if (historyStore) {
+    const existing = historyStore.getRun(runSeed)
+    if (existing?.status === 'incomplete') historyStore.resumeRun(runSeed)
+    else if (!existing) historyStore.startRun({ id: runSeed, game: safeRequest.gameName, version: safeRequest.versionLabel || safeRequest.versionTitle, regions: safeRequest.regions })
+  }
   const events = []
   const emit = (agentId, phase, kind, message, progress, evidenceIds = [], extras = {}) => {
     const event = {
@@ -1047,11 +1056,12 @@ export async function runLiveResearch({
     return event
   }
 
-  const minimumEvidence = Math.max(1, Math.floor(coveragePolicy.minimumEvidence || DEFAULT_MINIMUM_EVIDENCE))
+  const evidencePerRegion = Math.max(1, Math.floor(coveragePolicy.evidencePerRegion || 30))
+  const minimumEvidence = evidencePerRegion * safeRequest.regions.length
   const requestedMinimumSites = Math.max(1, Math.floor(coveragePolicy.minimumSites || DEFAULT_MINIMUM_SITES))
-  const maxEvidence = Math.max(minimumEvidence, Math.floor(coveragePolicy.maxEvidence || 48))
+  const maxEvidence = Math.max(minimumEvidence, Math.floor(coveragePolicy.maxEvidence || minimumEvidence))
   const providers = coveragePolicy.providers || SEARCH_PROVIDERS
-  emit('research', 'research', 'status', `社区研究 Agent 已启动自适应真实检索：目标 ${requestedMinimumSites}+ 站点、${minimumEvidence}+ 条玩家证据`, 4)
+  emit('research', 'research', 'status', `社区研究 Agent 已启动 AI 动态真实检索：CN / JP / WEST 各 ${evidencePerRegion}+ 条，实际检查 ${requestedMinimumSites}+ 站点`, 4)
   const directRetrievals = []
   if (safeRequest.regions.includes('WEST')) {
     directRetrievals.push(fetchRedditEvidence({ request: safeRequest, apiKey, fetchImpl }).then((items) => {
@@ -1071,39 +1081,80 @@ export async function runLiveResearch({
       return []
     }))
   }
-  const directEvidence = (await Promise.all(directRetrievals)).flat()
-  const searchPlans = interleavePlans(
-    safeRequest.regions.map((region) => buildSourceSearchPlans(safeRequest, region, runSeed)),
-    runSeed,
-  )
-  const minimumSites = Math.min(requestedMinimumSites, searchPlans.length)
-  const coverage = await collectResearchCoverage({
-    plans: searchPlans,
-    minimumSites,
-    minimumEvidence: Math.max(0, minimumEvidence - directEvidence.length),
-    concurrency: coveragePolicy.concurrency || DEFAULT_SEARCH_CONCURRENCY,
-    providers,
-    retrieve: ({ plan, provider, query, round }) => provider === 'brave'
-      ? fetchBraveSearchEvidence({ request: safeRequest, plan, query, round, fetchImpl })
-      : fetchBigModelSearchEvidence({ request: safeRequest, plan, query, round, apiKey, config, fetchImpl }),
-    onAttempt: (attempt, stats) => {
-      const providerLabel = attempt.provider === 'brave' ? 'Brave Search' : 'BigModel Search'
-      const progress = Math.min(88, 18 + Math.round((stats.sitesAttempted / Math.max(1, minimumSites)) * 52))
-      const message = attempt.error
-        ? `${attempt.plan.region} · ${attempt.plan.sourceNames[0]} · ${providerLabel} 第 ${attempt.round + 1} 轮失败：${attempt.error}`
-        : `${attempt.plan.region} · ${attempt.plan.sourceNames[0]} · ${providerLabel} 第 ${attempt.round + 1} 轮：新增 ${attempt.records.length} 条；已搜索 ${stats.sitesAttempted} 站 / 累计 ${stats.evidenceCount + directEvidence.length} 条`
-      emit('research', 'research', attempt.error ? 'risk' : 'source', message, progress, attempt.records.map((item) => item.id), {
-        source: `${attempt.plan.sourceNames[0]} · ${providerLabel}`,
-        region: attempt.plan.region,
-        severity: attempt.error ? 'medium' : undefined,
-        evidenceRecords: attempt.records,
-        searchProvider: attempt.provider,
-        query: attempt.query,
-        sitesAttempted: stats.sitesAttempted,
-        evidenceCount: stats.evidenceCount + directEvidence.length,
-      })
-    },
+  const directEvidence = (await Promise.all(directRetrievals)).flat().map((item) => ({ ...item, runId: runSeed, role: 'player' }))
+  const policy = createCoveragePolicy({
+    currentRunId: runSeed,
+    requestedRegions: safeRequest.regions,
+    evidencePerRegion,
+    globalDomains: requestedMinimumSites,
+    maxConcurrentPages: coveragePolicy.browserConcurrency || 12,
+    maxRunMinutes: coveragePolicy.maxRunMinutes || 45,
   })
+  const regionalResults = await Promise.all(safeRequest.regions.map(async (region) => {
+    const regionalSources = LIVE_SOURCE_CATALOG.filter((source) => source.regions.includes(region))
+    const plan = {
+      id: `dynamic-${region.toLocaleLowerCase()}`,
+      sourceId: `dynamic-${region.toLocaleLowerCase()}`,
+      region,
+      language: languageFor(region),
+      sourceNames: regionalSources.map((source) => source.name),
+      domains: [...new Set(regionalSources.flatMap((source) => source.domains))],
+      queries: [],
+      evidenceOffset: region === 'CN' ? 0 : region === 'JP' ? 10_000 : 20_000,
+    }
+    const model = researchModelFactory
+      ? researchModelFactory({ region, request: safeRequest, policy })
+      : {
+          nextAction: (context) => requestAgentJson({
+            config,
+            apiKey,
+            fetchImpl,
+            role: `${region} 动态研究规划 Agent`,
+            instruction: '根据当前配额、过去动作和失败原因选择唯一下一步。不得照固定清单执行。只返回 search_web 或 finish_region 动作；search_web 必须指定 brave 或 bigmodel、当地语言查询。只有 quota.reached=true 才能 finish_region。',
+            payload: { task: safeRequest, sourceCapabilities: regionalSources, observedState: context },
+          }),
+        }
+    let dynamicRound = 0
+    return runRegionalResearchAgent({
+      region,
+      request: safeRequest,
+      policy,
+      model,
+      state: { evidence: directEvidence, attempts: [] },
+      maxSteps: coveragePolicy.maxDynamicSteps || 160,
+      tools: {
+        searchWeb: async (action) => {
+          const round = dynamicRound
+          dynamicRound += 1
+          const records = action.provider === 'brave'
+            ? await fetchBraveSearchEvidence({ request: safeRequest, plan, query: action.query, round, fetchImpl })
+            : await fetchBigModelSearchEvidence({ request: safeRequest, plan, query: action.query, round, apiKey, config, fetchImpl })
+          const grounded = records.map((item) => ({ ...item, runId: runSeed, role: 'player' }))
+          return {
+            evidence: grounded,
+            inspected: grounded.map((item) => ({ id: `${region}-${action.provider}-${item.id}`, region, status: 'completed', url: item.url })),
+            pages: grounded.map((item) => ({ url: item.url, title: item.title, source: item.source })),
+          }
+        },
+      },
+      onEvent: (event) => emit('research', 'research', event.kind === 'action_failed' ? 'risk' : 'source', `${region} · ${event.message}`, 20, [], {
+        region,
+        searchProvider: event.action?.provider,
+        query: event.action?.query,
+      }),
+    })
+  }))
+  const dynamicEvidence = regionalResults.flatMap((result) => result.evidence)
+  const dynamicAttempts = regionalResults.flatMap((result) => result.attempts)
+  const regionalCoverage = deriveRegionalCoverage(dynamicEvidence, dynamicAttempts, policy)
+  const coverage = {
+    evidence: dynamicEvidence,
+    attempts: dynamicAttempts.map((attempt) => ({ ...attempt, provider: attempt.provider || 'dynamic' })),
+    sitesAttempted: regionalCoverage.globalDomains,
+    targetReached: regionalCoverage.targetReached,
+    regionalCoverage,
+  }
+  const minimumSites = requestedMinimumSites
   const combined = new Map()
   for (const item of [...directEvidence, ...coverage.evidence]) {
     const key = evidenceDedupeKey(item)
@@ -1112,9 +1163,48 @@ export async function runLiveResearch({
   const allEvidence = [...combined.values()]
   if (!allEvidence.length) throw new Error('公开来源没有返回可核验证据；任务已停止，未生成替代评论。')
   const targetReached = coverage.targetReached && allEvidence.length >= minimumEvidence
+  if (historyStore) {
+    for (const [attemptIndex, attempt] of coverage.attempts.entries()) {
+      try { historyStore.appendAttempt(runSeed, { ...attempt, id: attempt.id || `attempt-${String(attemptIndex + 1).padStart(4, '0')}` }) } catch { /* resume-safe duplicate */ }
+    }
+    for (const item of allEvidence) {
+      try { historyStore.appendEvidence(runSeed, item) } catch (error) {
+        if (!/duplicate/i.test(String(error?.message || error))) throw error
+      }
+    }
+  }
   if (!targetReached) emit('research', 'research', 'risk', `已完成可用来源检索，但样本未达到目标：搜索 ${coverage.sitesAttempted} 个站点，取得 ${allEvidence.length} 条可核验玩家证据。后续结论将降级并明确显示证据不足。`, 92, allEvidence.map((item) => item.id), { severity: 'high', sitesAttempted: coverage.sitesAttempted, evidenceCount: allEvidence.length })
   const evidence = selectBalancedEvidence(allEvidence, maxEvidence)
   assertVerifiedEvidence(evidence)
+  if (!targetReached) {
+    const limitations = coverage.regionalCoverage.limitations
+    historyStore?.finishRun(runSeed, { status: 'incomplete', limitations })
+    const durationMs = Math.max(1, now() - startedAt)
+    return {
+      id: `live-${startedAt}`,
+      dataMode: 'live',
+      game: { id: `live-${safeRequest.gameName}`, name: safeRequest.gameName, shortName: safeRequest.gameName.slice(0, 4).toUpperCase(), accent: '#67d8ee' },
+      version: { id: `live-${safeRequest.versionLabel || 'update'}`, label: safeRequest.versionLabel || 'LIVE', title: safeRequest.versionTitle },
+      durationMs,
+      regions: safeRequest.regions,
+      sources: [...new Set(evidence.map((item) => item.source))],
+      agents: buildLiveAgents(durationMs),
+      events,
+      evidence,
+      report: { summary: '实时研究尚未达到每地区 30 条真实证据门槛，未生成完整报告。', sentimentScore: 0, riskLevel: 'low', sampleCount: 0, positivePercent: 0, negativePercent: 0, neutralPercent: 0, trend: [], regions: [], keywords: [], controversies: [], recommendations: [] },
+      advisorAnswers: [],
+      researchCoverage: {
+        targetSites: requestedMinimumSites,
+        targetEvidence: minimumEvidence,
+        sitesAttempted: coverage.sitesAttempted,
+        evidenceCollected: evidence.length,
+        attempts: coverage.attempts.length,
+        providers: [...new Set(coverage.attempts.map((attempt) => attempt.provider))],
+        targetReached: false,
+        ...coverage.regionalCoverage,
+      },
+    }
+  }
   let wikiDocuments = []
   let browserDocuments = []
   let ragStats = { documents: 0, contextDocuments: 0, playerDocuments: 0, chunks: 0 }
@@ -1268,6 +1358,7 @@ export async function runLiveResearch({
       browserPagesObserved: browserDocuments.length,
       ragDocuments: ragStats.documents,
       ragChunks: ragStats.chunks,
+      ...coverage.regionalCoverage,
     },
   }
 }

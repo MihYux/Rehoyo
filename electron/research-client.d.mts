@@ -159,6 +159,20 @@ export function runLiveResearch(options: {
     providers?: ResearchProvider[]
     browserConcurrency?: number
     browserPlayerPages?: number
+    evidencePerRegion?: number
+    maxRunMinutes?: number
+    maxDynamicSteps?: number
+  }
+  researchModelFactory?: (input: Record<string, unknown>) => {
+    nextAction(context: Record<string, any>): Promise<unknown>
+  }
+  historyStore?: {
+    getRun(runId: string): any
+    startRun(input: Record<string, unknown>): unknown
+    resumeRun(runId: string): unknown
+    appendAttempt(runId: string, attempt: Record<string, unknown>): void
+    appendEvidence(runId: string, evidence: Record<string, unknown>): void
+    finishRun(runId: string, input: { status: 'incomplete' | 'complete' | 'failed'; limitations?: string[] }): unknown
   }
   ragStore?: {
     indexDocuments(input: { runId: string; game: string; version: string; documents: Array<Record<string, unknown>> }): { indexed: number } | void

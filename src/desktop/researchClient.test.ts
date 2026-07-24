@@ -482,11 +482,17 @@ describe('live research agent orchestration', () => {
       getApiKey: vi.fn(async () => 'private-test-key'),
       now: (() => { let value = 1_000; return () => (value += 250) })(),
       coveragePolicy: {
-        minimumSites: LIVE_SOURCE_CATALOG.length,
+        minimumSites: 1,
         minimumEvidence: 3,
+        evidencePerRegion: 1,
         maxEvidence: 3,
         providers: ['bigmodel'],
       },
+      researchModelFactory: () => ({
+        nextAction: vi.fn(async (context: { quota: { reached: boolean } }) => context.quota.reached
+          ? { type: 'finish_region', reason: '测试地区配额已达到' }
+          : { type: 'search_web', provider: 'bigmodel', query: '原神 5.0 纳塔 玩家 评价 体验', language: 'zh-CN' }),
+      }),
       onEvent: (event) => events.push(event),
       ragStore,
       createResearchBrowser: ({ onObservation }) => ({
@@ -507,12 +513,9 @@ describe('live research agent orchestration', () => {
     expect(decodeURIComponent(redditUrl)).toContain('Natlan 5.0 feedback')
     expect(redditUrl).toContain('restrict_sr=on')
     const webSearchCalls = calls.filter((call) => call.startsWith('retrieve:') && !call.endsWith('reddit') && !call.endsWith('niconico-snapshot'))
-    expect(webSearchCalls.length).toBeGreaterThanOrEqual(8)
+    expect(webSearchCalls).toHaveLength(1)
     expect(webSearchCalls.some((call) => call.includes('纳塔 玩家 评价'))).toBe(true)
-    expect(webSearchCalls.some((call) => call.includes('site:hoyoplay.hoyoverse.com'))).toBe(true)
-    expect(webSearchCalls.some((call) => call.includes('site:miyoushe.com'))).toBe(true)
-    expect(webSearchCalls.some((call) => call.includes('site:youtube.com'))).toBe(true)
-    expect(webSearchCalls.some((call) => call.includes('site:tieba.baidu.com'))).toBe(true)
+    expect(webSearchCalls.every((call) => !call.includes('site:hoyoplay.hoyoverse.com'))).toBe(true)
     expect(events[0]).toMatchObject({ agentId: 'research', kind: 'status' })
     expect(sentimentSystem).toContain('"analyses"')
     expect(strategyPayload).toMatchObject({ derivedMetrics: { positivePercent: 33, negativePercent: 33, neutralPercent: 34 } })
